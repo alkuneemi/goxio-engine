@@ -3,6 +3,7 @@ export {
   useGraph,
   useNode,
   useHealth,
+  useSpaceSummary,
   useApplyHealthBatch,
   useNodeFromGraph,
   queryKeys,

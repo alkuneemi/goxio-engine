@@ -1,4 +1,4 @@
-import type { GraphResponse, NodeResponse, HealthResponse } from '../types';
+import type { GraphResponse, NodeResponse, HealthResponse, SpaceSummary, SpaceActionRequest, SpaceActionRecord } from '../types';
 
 const API_BASE = '/api';
 
@@ -26,11 +26,14 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new ApiError(
-      `Request failed: ${response.statusText}`,
-      response.status,
-      response.statusText
-    );
+    let message = `Request failed: ${response.statusText}`;
+    try {
+      const body = await response.json() as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      // body was not JSON
+    }
+    throw new ApiError(message, response.status, response.statusText);
   }
 
   return response.json();
@@ -47,6 +50,17 @@ export const api = {
 
   async getHealth(): Promise<HealthResponse> {
     return request<HealthResponse>('/health');
+  },
+
+  async getSpace(): Promise<{ data: SpaceSummary }> {
+    return request<{ data: SpaceSummary }>('/space');
+  },
+
+  async postSpaceAction(body: SpaceActionRequest): Promise<{ data: SpaceActionRecord }> {
+    return request<{ data: SpaceActionRecord }>('/space/actions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   },
 };
 

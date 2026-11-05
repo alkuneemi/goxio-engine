@@ -29,7 +29,8 @@ interface HeaderBarProps {
 }
 
 const nodeTypes: NodeType[] = [
-  'database', 'postgres', 'mongodb', 'redis', 'table', 'collection',
+  'disk', 'volume', 'container', 'database', 'repo', 'github_account',
+  'postgres', 'mongodb', 'redis', 'table', 'collection',
   'bucket', 's3', 'storage', 'service', 'api', 'http', 'gateway',
   'queue', 'cache', 'payment', 'auth',
   'namespace', 'deployment', 'statefulset', 'daemonset', 'pod', 'k8s_service',
@@ -217,7 +218,7 @@ export default function HeaderBar({
   return (
     <header className={styles.header}>
       <span className={styles.appName}>
-        <span className={styles.brand}>GoXIO</span>
+        <span className={styles.brand}><span className={styles.brandGo}>Go</span><span className={styles.brandXio}>XIO</span></span>
         {wsStatus && (
           <span
             className={`${styles.wsIndicator} ${styles[`ws_${wsStatus}`]}`}

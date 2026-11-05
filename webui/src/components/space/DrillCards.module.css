@@ -1,0 +1,145 @@
+.wrap {
+  height: 100%;
+  overflow: auto;
+  padding: 20px 24px 32px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.back, .crumb {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.back:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.crumbWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sep {
+  color: var(--text-dim);
+}
+
+.title {
+  margin: 0 0 0 auto;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid #00D4C8;
+  border-radius: var(--radius-md);
+  padding: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card:hover {
+  border-color: #00D4C8;
+}
+
+.cardTop {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.type {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #00D4C8;
+}
+
+.name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.activity, .unused {
+  font-size: 10px;
+  border-radius: 999px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-default);
+  text-transform: uppercase;
+}
+
+.act_daily { color: var(--activity-daily); }
+.act_intermittent { color: var(--activity-intermittent); }
+.act_idle { color: var(--activity-idle); }
+.act_core { color: var(--activity-core); }
+
+.unused {
+  color: #f5f5f5;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.bar {
+  display: block;
+  height: 4px;
+  background: var(--bg-interactive);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: #00D4C8;
+}
+
+.empty {
+  color: var(--text-secondary);
+  max-width: 520px;
+  line-height: 1.5;
+}

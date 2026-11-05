@@ -37,6 +37,12 @@
   --type-gateway: #f59e0b;   /* gateway, queue */
   --type-infra: #ec4899;     /* cache, payment, auth */
   --type-k8s: #326ce5;       /* namespace, deployment, statefulset, daemonset, pod, k8s_service */
+  --type-space: #00D4C8;     /* disk — GoXIO teal */
+
+  --activity-daily: #fb923c;
+  --activity-intermittent: #fbbf24;
+  --activity-idle: #737373;
+  --activity-core: #00D4C8;
 
   /* Text hierarchy */
   --text-primary: #f5f5f5;

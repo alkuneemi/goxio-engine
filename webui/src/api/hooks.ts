@@ -17,9 +17,20 @@ export function useGraph() {
       const response = await api.getGraph();
       return response.data;
     },
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: 60_000,
     retry: 3,
     refetchOnWindowFocus: false,
+  });
+}
+
+export function useSpaceSummary() {
+  return useQuery({
+    queryKey: ['space-summary'] as const,
+    queryFn: async () => (await api.getSpace()).data,
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+    retry: 1,
   });
 }
 

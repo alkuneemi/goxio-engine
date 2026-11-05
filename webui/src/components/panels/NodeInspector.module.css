@@ -446,3 +446,55 @@
   border: 1px dashed var(--border-subtle);
   text-align: center;
 }
+
+.pressures {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pressure {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.pressureTrack {
+  display: block;
+  height: 4px;
+  background: var(--bg-interactive);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pressureTrack > span {
+  display: block;
+  height: 100%;
+  background: #00D4C8;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.actions button {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

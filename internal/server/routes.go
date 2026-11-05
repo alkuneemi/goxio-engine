@@ -28,6 +28,10 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.HandleFunc("/api/graph", s.graphHandler).Methods("GET")
 	r.HandleFunc("/api/node/{id}", s.nodeHandler).Methods("GET")
 	r.HandleFunc("/api/health", s.apiHealthHandler).Methods("GET")
+	r.HandleFunc("/api/space", s.spaceSummaryHandler).Methods("GET")
+	r.HandleFunc("/api/space/actions", s.spaceActionsHandler).Methods("GET")
+	r.HandleFunc("/api/space/actions", s.spaceActionHandler).Methods("POST")
+	r.HandleFunc("/api/space/ingest", s.spaceIngestHandler).Methods("POST")
 
 	r.HandleFunc("/websocket", s.websocketHandler)
 
@@ -101,7 +105,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) graphHandler(w http.ResponseWriter, r *http.Request) {
-	g, err := s.registry.DiscoverAll()
+	g, err := s.currentGraph()
 	if err != nil {
 		s.logger.Errorw("graphHandler discover failed", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -117,7 +121,7 @@ func (s *Server) graphHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) nodeHandler(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 
-	g, err := s.registry.DiscoverAll()
+	g, err := s.currentGraph()
 	if err != nil {
 		s.logger.Errorw("nodeHandler discover failed", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -192,7 +196,7 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		// Get the current graph to map adapter health to actual node IDs
-		g, err := s.registry.DiscoverAll()
+		g, err := s.currentGraph()
 		if err != nil {
 			s.logger.Warnw("websocket discover failed", "err", err)
 		}

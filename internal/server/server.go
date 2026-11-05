@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,6 +15,7 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
+	"github.com/guilherme-grimm/graph-go/internal/space"
 )
 
 type Server struct {
@@ -21,6 +23,7 @@ type Server struct {
 	allowedOrigins []string
 	registry       adapters.Registry
 	logger         *zap.SugaredLogger
+	space          *space.Store
 }
 
 // NewServer returns the HTTP server and a cleanup function that should
@@ -66,11 +69,21 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 
 	watchCancel := startWatchers(discoverers, svcSync, logger)
 
+	spaceStore := space.NewStore(logger)
+	spaceStore.SetIngestToken(os.Getenv("GOXIO_INGEST_TOKEN"))
+	spaceMode := space.ModeFromEnv()
+	bootCtx, bootCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	spaceStore.Bootstrap(bootCtx, spaceMode)
+	bootCancel()
+	refreshCtx, refreshCancel := context.WithCancel(context.Background())
+	go spaceStore.Loop(refreshCtx, spaceMode)
+
 	s := &Server{
 		port:           port,
 		allowedOrigins: allowedOrigins,
 		registry:       reg,
 		logger:         logger,
+		space:          spaceStore,
 	}
 
 	server := &http.Server{
@@ -82,6 +95,7 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 	}
 
 	cleanup := func() {
+		refreshCancel()
 		watchCancel()
 		regCleanup()
 	}

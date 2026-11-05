@@ -1,4 +1,4 @@
-import type { Graph, GraphEdge, GraphNode, HealthStatus, NodeType } from '../types';
+import type { Graph, GraphEdge, GraphNode, HealthStatus, NodeType, SpaceActivity } from '../types';
 
 // Above this many nodes a graph is "large": namespaces start collapsed and
 // layouts other than swimlane are swapped out (they turn into a haystack and
@@ -24,9 +24,17 @@ export interface Filters {
   hiddenNamespaces: string[];
   // Case-insensitive substring matched against node names.
   query: string;
+  // Space map. Repo values are repo node ids. Account values are GitHub logins.
+  repos: string[];
+  accounts: string[];
+  unusedOnly: boolean;
+  activities: SpaceActivity[];
 }
 
-export const EMPTY_FILTERS: Filters = { types: [], health: [], sources: [], hiddenNamespaces: [], query: '' };
+export const EMPTY_FILTERS: Filters = {
+  types: [], health: [], sources: [], hiddenNamespaces: [], query: '',
+  repos: [], accounts: [], unusedOnly: false, activities: [],
+};
 
 // Each facet is one predicate; a node is shown when every active facet keeps
 // it. Adding a facet (e.g. labels) means adding a field to Filters and one
@@ -45,7 +53,12 @@ const FACETS: Facet[] = [
 ];
 
 export function activeFilterCount(f: Filters): number {
-  return f.types.length + f.health.length + f.sources.length + f.hiddenNamespaces.length + (f.query.trim() ? 1 : 0);
+  return f.types.length + f.health.length + f.sources.length + f.hiddenNamespaces.length + (f.query.trim() ? 1 : 0)
+    + f.repos.length + f.accounts.length + (f.unusedOnly ? 1 : 0) + f.activities.length;
+}
+
+export function hasSpaceFilter(f: Filters): boolean {
+  return f.repos.length > 0 || f.accounts.length > 0 || f.unusedOnly || f.activities.length > 0;
 }
 
 export function filtersFromParams(params: URLSearchParams): Filters {
@@ -56,6 +69,10 @@ export function filtersFromParams(params: URLSearchParams): Filters {
     sources: list('sources') as NodeSource[],
     hiddenNamespaces: list('hide'),
     query: params.get('q') ?? '',
+    repos: list('repo'),
+    accounts: list('account'),
+    unusedOnly: params.get('unused') === '1',
+    activities: list('activity') as SpaceActivity[],
   };
 }
 
@@ -66,6 +83,36 @@ export function writeFiltersToParams(f: Filters, params: URLSearchParams): void 
   set('sources', f.sources.join(','));
   set('hide', f.hiddenNamespaces.join(','));
   set('q', f.query.trim());
+  set('repo', f.repos.join(','));
+  set('account', f.accounts.join(','));
+  set('activity', f.activities.join(','));
+  if (f.unusedOnly) params.set('unused', '1');
+  else params.delete('unused');
+}
+
+function metaString(node: GraphNode, key: string): string {
+  const v = node.metadata?.[key];
+  return typeof v === 'string' ? v : '';
+}
+
+function matchesSpace(node: GraphNode, f: Filters): boolean {
+  if (f.unusedOnly && node.metadata?.unused !== true) return false;
+  if (f.activities.length) {
+    const activity = metaString(node, 'activity');
+    if (!f.activities.includes(activity as SpaceActivity)) return false;
+  }
+  if (f.repos.length) {
+    const repo = metaString(node, 'repo');
+    const repoName = metaString(node, 'repo_name');
+    const hit = f.repos.some(r => r === node.id || r === node.name || r === repo || r === repoName);
+    if (!hit) return false;
+  }
+  if (f.accounts.length) {
+    const account = metaString(node, 'github_account');
+    const hit = f.accounts.some(a => a === node.id || a === node.name || a === account);
+    if (!hit) return false;
+  }
+  return true;
 }
 
 // Namespace a node lives in: its own id for namespace nodes, otherwise the
@@ -78,7 +125,8 @@ export function namespaceOf(node: GraphNode, nodeById: Map<string, GraphNode>): 
 
 export function applyFilters(graph: Graph, f: Filters): Graph {
   const predicates = FACETS.map(facet => facet(f)).filter((p): p is (n: GraphNode) => boolean => p !== null);
-  if (predicates.length === 0 && f.hiddenNamespaces.length === 0) return graph;
+  const spaceOn = hasSpaceFilter(f);
+  if (predicates.length === 0 && f.hiddenNamespaces.length === 0 && !spaceOn) return graph;
 
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]));
   const hidden = new Set(f.hiddenNamespaces);
@@ -86,17 +134,44 @@ export function applyFilters(graph: Graph, f: Filters): Graph {
     const ns = namespaceOf(n, nodeById);
     return ns !== undefined && hidden.has(nodeById.get(ns)!.name);
   };
+  const passes = (n: GraphNode) => !isHidden(n) && predicates.every(p => p(n));
 
   const kept = new Map<string, GraphNode>();
-  for (const node of graph.nodes) {
-    if (isHidden(node)) continue;
-    if (predicates.every(p => p(node))) kept.set(node.id, node);
-  }
-  // Keep the namespace of every surviving node so it still has a lane/group
-  // to sit in, even when the namespace itself didn't match the filter.
-  for (const node of [...kept.values()]) {
-    const ns = namespaceOf(node, nodeById);
-    if (ns && !kept.has(ns)) kept.set(ns, nodeById.get(ns)!);
+  if (!spaceOn) {
+    for (const node of graph.nodes) {
+      if (passes(node)) kept.set(node.id, node);
+    }
+    // Keep the namespace of every surviving node so it still has a lane/group
+    // to sit in, even when the namespace itself didn't match the filter.
+    for (const node of [...kept.values()]) {
+      const ns = namespaceOf(node, nodeById);
+      if (ns && !kept.has(ns)) kept.set(ns, nodeById.get(ns)!);
+    }
+  } else {
+    const seeds: GraphNode[] = [];
+    for (const node of graph.nodes) {
+      if (!passes(node) || !matchesSpace(node, f)) continue;
+      seeds.push(node);
+      kept.set(node.id, node);
+    }
+    const consider = (n: GraphNode | undefined) => {
+      if (!n || kept.has(n.id) || !passes(n)) return;
+      kept.set(n.id, n);
+    };
+    for (const node of seeds) {
+      let parent = node.parent;
+      let guard = 0;
+      while (parent && guard++ < 16) {
+        const p = nodeById.get(parent);
+        consider(p);
+        parent = p?.parent;
+      }
+      for (const key of ['repo', 'github_account'] as const) {
+        const ref = metaString(node, key);
+        if (!ref) continue;
+        consider(graph.nodes.find(n => n.id === ref || n.name === ref));
+      }
+    }
   }
 
   const nodes = graph.nodes.filter(n => kept.has(n.id));

@@ -29,6 +29,13 @@ const (
 	TypeDaemonSet   NodeType = "daemonset"
 	TypePod         NodeType = "pod"
 	TypeK8sService  NodeType = "k8s_service"
+
+	// Space map (disk → volume → container → database → repo → GitHub account).
+	TypeDisk          NodeType = "disk"
+	TypeVolume        NodeType = "volume"
+	TypeContainer     NodeType = "container"
+	TypeRepo          NodeType = "repo"
+	TypeGitHubAccount NodeType = "github_account"
 )
 
 type Node struct {

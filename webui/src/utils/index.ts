@@ -48,3 +48,4 @@ export * from './graphTransform';
 export * from './forceDirectedLayout';
 export * from './swimlaneLayout';
 export * from './graphView';
+export * from './space';

@@ -49,6 +49,21 @@ go run ./cmd/app demo
 Open **http://localhost:8080**. The header shows **GoXIO** and a **Source** link
 back to this repository (AGPL corresponding-source offer).
 
+The space map (disk → volume → container → database → repo → GitHub account)
+is included. Use the **Cards** and **Map** switch, then open a node for size,
+path, repo, account, pressure, and confirm-gated delete / archive / transfer.
+Those actions are recorded only — the process does not write to the host.
+
+```bash
+# scripted hierarchy, no Docker required
+make run-space-demo
+
+# UI dev server (proxies /api to :8080) in another terminal
+make run-frontend
+```
+
+Run notes: [`docs/GOXIO-RUN.md`](docs/GOXIO-RUN.md).
+
 ## Production on Omxio hosts
 
 1. **Read-only Docker socket proxy** — required. Never mount the raw Docker
