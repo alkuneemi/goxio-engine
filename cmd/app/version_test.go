@@ -18,22 +18,22 @@ func TestVersionString(t *testing.T) {
 			version: "v0.1.0",
 			commit:  "abc1234",
 			date:    "2026-04-29",
-			want:    "graph-go v0.1.0\ncommit: abc1234\nbuilt:  2026-04-29",
+			want:    "goxio v0.1.0\ncommit: abc1234\nbuilt:  2026-04-29",
 		},
 		{
 			name:    "missing commit",
 			version: "v0.1.0",
 			date:    "2026-04-29",
-			want:    "graph-go v0.1.0\ncommit: (unknown)\nbuilt:  2026-04-29",
+			want:    "goxio v0.1.0\ncommit: (unknown)\nbuilt:  2026-04-29",
 		},
 		{
 			name: "all empty falls back to devel",
-			want: "graph-go (devel)\ncommit: (unknown)\nbuilt:  (unknown)",
+			want: "goxio (devel)\ncommit: (unknown)\nbuilt:  (unknown)",
 		},
 		{
 			name:    "only version set",
 			version: "v0.2.0",
-			want:    "graph-go v0.2.0\ncommit: (unknown)\nbuilt:  (unknown)",
+			want:    "goxio v0.2.0\ncommit: (unknown)\nbuilt:  (unknown)",
 		},
 	}
 
@@ -63,7 +63,7 @@ func TestVersionCommandOutput(t *testing.T) {
 		{
 			name:      "version cmd prints all three lines",
 			args:      []string{"version"},
-			wantInOut: []string{"graph-go ", "commit:", "built:"},
+			wantInOut: []string{"goxio ", "commit:", "built:"},
 		},
 		{
 			name:      "root help lists version",

@@ -1,0 +1,24 @@
+GoXIO
+=====
+
+GoXIO is an Omxio-branded distribution of the graph-go infrastructure mapper.
+
+This product includes software developed as graph-go:
+
+  Copyright (c) Guilherme "Grimm" Rodrigues <contact@grimm0.dev>
+  Upstream project: https://github.com/guilherme-grimm/graph-go
+  Upstream commit pinned by this tree: 6c4f822b7f256f8e76fc082bf39861bdbcb727f8
+
+graph-go (and therefore GoXIO) is licensed under the GNU Affero General Public
+License version 3 (AGPL-3.0). See the file LICENSE in this repository.
+
+Omxio / GoXIO modifications and branding:
+  Copyright (c) 2026 Omxio / alkuneemi
+  Public source for this engine: https://github.com/alkuneemi/goxio-engine
+
+AGPL-3.0 requires that if you modify this engine and let others interact with it
+over a network, you must offer them the corresponding source of your modified
+version. The Omxio platform application itself is separate and is not part of
+this AGPL-covered engine tree when the engine runs as an isolated service that
+exchanges JSON only.
+

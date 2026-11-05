@@ -36,5 +36,5 @@ func versionString(version, commit, date string) string {
 		date = "(unknown)"
 	}
 
-	return fmt.Sprintf("graph-go %s\ncommit: %s\nbuilt:  %s", version, commit, date)
+	return fmt.Sprintf("goxio %s\ncommit: %s\nbuilt:  %s", version, commit, date)
 }

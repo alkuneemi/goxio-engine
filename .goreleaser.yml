@@ -1,10 +1,10 @@
 version: 2
 
-project_name: graph-go
+project_name: goxio
 
 builds:
   - main: ./cmd/app
-    binary: graph-go
+    binary: goxio
     env:
       - CGO_ENABLED=0
     ldflags:
@@ -29,6 +29,7 @@ archives:
     files:
       - README.md
       - LICENSE
+      - NOTICE
 
 checksum:
   name_template: "checksums.txt"

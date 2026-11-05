@@ -217,7 +217,7 @@ export default function HeaderBar({
   return (
     <header className={styles.header}>
       <span className={styles.appName}>
-        graph-go
+        <span className={styles.brand}>GoXIO</span>
         {wsStatus && (
           <span
             className={`${styles.wsIndicator} ${styles[`ws_${wsStatus}`]}`}
@@ -226,6 +226,15 @@ export default function HeaderBar({
             role="status"
           />
         )}
+        <a
+          className={styles.sourceLink}
+          href="https://github.com/alkuneemi/goxio-engine"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="AGPL source — GoXIO engine"
+        >
+          Source
+        </a>
       </span>
 
       <button className={styles.searchTrigger} onClick={onSearchOpen} aria-label="Search nodes">

@@ -41,9 +41,9 @@ func newRootCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:          "graph-go",
+		Use:          "goxio",
 		Short:        "See your infrastructure — zero config.",
-		Long:         "graph-go auto-discovers databases, caches, storage, and services, and serves a live topology graph.",
+		Long:         "GoXIO (Omxio server map engine) auto-discovers databases, caches, storage, and services, and serves a live topology graph. Based on graph-go.",
 		Version:      Version,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,7 +76,7 @@ func runServe(configPath, logLevel, logFormat string) error {
 	}
 	defer logger.Sync() //nolint:errcheck // stderr sync may fail on some TTYs
 
-	logger.Infow("graph-go starting", "version", Version)
+	logger.Infow("goxio starting", "version", Version)
 
 	cfg, err := config.Load(configPath)
 	if err != nil {

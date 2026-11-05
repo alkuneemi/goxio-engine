@@ -1,11 +1,11 @@
-# graph-go Configuration
+# GoXIO Configuration (based on graph-go)
 #
 # This file defines the server settings, discovery options, and the data sources
-# that graph-go will connect to and visualize. Copy this file to config.yaml and
+# that GoXIO will connect to and visualize. Copy this file to config.yaml and
 # fill in your connection details.
 #
 # Auto-discovery is the default path — mount the Docker socket and/or run inside
-# Kubernetes and graph-go discovers your infrastructure with NO config file.
+# Kubernetes and GoXIO discovers your infrastructure with NO config file.
 # Use this file only as an escape hatch for services discovery can't reach:
 # remote databases, managed cloud services, external endpoints.
 #
@@ -272,7 +272,9 @@ connections:
 #    - Health is cached for 10 seconds
 #    - Caches are invalidated on adapter registration and discovery events
 #
-# 4. Security:
+# 4. Security (Omxio / GoXIO):
+#    - Prefer vaulted environment variables for DSNs and passwords (never commit real secrets)
+#    - Never log raw DSNs, passwords, tokens, or private keys — redaction is enabled in adapters
 #    - Store credentials in environment variables for production
 #    - Use IAM roles instead of static credentials when possible
 #    - Never commit config.yaml with real credentials to version control

@@ -31,7 +31,7 @@ func newDemoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "demo",
 		Short:        "Boot the seeded demo stack with Docker Compose.",
-		Long:         "demo is a repo-scoped onboarding command. It runs the seeded Docker Compose stack from docker-compose.demo.yml so you can explore graph-go against a realistic environment immediately.",
+		Long:         "demo is a repo-scoped onboarding command. It runs the seeded Docker Compose stack from docker-compose.demo.yml so you can explore GoXIO against a realistic environment immediately.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDemo(cmd.OutOrStdout(), cmd.ErrOrStderr())
@@ -92,7 +92,7 @@ func findRepoRootFrom(start string) (string, error) {
 
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", fmt.Errorf("repo root not found: run this command from the graph-go repository")
+			return "", fmt.Errorf("repo root not found: run this command from the goxio-engine repository")
 		}
 		current = parent
 	}
@@ -105,7 +105,7 @@ func fileExists(path string) bool {
 
 func checkDockerCLI() error {
 	if _, err := lookPath("docker"); err != nil {
-		return fmt.Errorf("docker CLI not found in PATH: install Docker with Docker Compose support to use `graph-go demo`")
+		return fmt.Errorf("docker CLI not found in PATH: install Docker with Docker Compose support to use `goxio demo`")
 	}
 
 	return nil
@@ -210,7 +210,7 @@ func containsPort(ports []int, want int) bool {
 
 func writeDemoIntro(w io.Writer, repoRoot, composeFile string) error {
 	lines := []string{
-		"Starting graph-go demo stack with Docker Compose...",
+		"Starting GoXIO demo stack with Docker Compose...",
 		fmt.Sprintf("Repo: %s", repoRoot),
 		fmt.Sprintf("Compose file: %s", composeFile),
 		"First run note: image pulls and builds can take several minutes on a cold machine.",

@@ -1,9 +1,11 @@
 services:
-  # graph-go only reads the Docker API (ping, version, list/inspect containers,
-  # events). The proxy allows exactly that and answers 403 to everything else,
-  # so graph-go never holds the daemon-level control the raw socket grants
-  # (a `:ro` bind mount does not restrict API calls). It also runs as root
-  # inside its own container, so no host-specific socket gid is needed.
+  # GoXIO (graph-go fork) only reads the Docker API (ping, version, list/inspect
+  # containers, events). The proxy allows exactly that and answers 403 to
+  # everything else, so GoXIO never holds the daemon-level control the raw
+  # socket grants (a `:ro` bind mount does not restrict API calls). It also
+  # runs as root inside its own container, so no host-specific socket gid is needed.
+  # PRODUCTION (Omxio): always use this read-only docker-socket-proxy pattern;
+  # never mount the raw Docker socket into GoXIO on the KSA or shared hosts.
   docker-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0
     environment:

@@ -1,561 +1,125 @@
 <div align="center">
 
-# graph-go
+# GoXIO
 
-**See your infrastructure. Zero Config.**
-
-Point graph-go at your stack and get a live, interactive map of every database, table, service, and storage bucket — with real-time health monitoring.
+**Omxio server map engine** — based on [graph-go](https://github.com/guilherme-grimm/graph-go)
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![graph-go showcase: Docker auto-discovery, a container appearing live, and Kubernetes swimlanes](./docs/graph-go-showcase.gif)](./docs/graph-go-showcase.mp4)
+[![Source](https://img.shields.io/badge/Source-alkuneemi%2Fgoxio--engine-green.svg)](https://github.com/alkuneemi/goxio-engine)
 
-<sub>▶ [Watch in full quality (MP4)](./docs/graph-go-showcase.mp4)</sub>
+**EN:** Put the server IP in, and GoXIO draws everything on it — what is running, what is idle, and what is eating the disk — without writing to the host.
+
+**AR:** حط IP السيرفر، وGoXIO يرسم لك كل شي فيه: إيش شغال، إيش نايم، وإيش ماكل المساحة، بدون ما يلمس شي.
 
 </div>
 
 ---
 
-graph-go is a **CLI-first infrastructure mapper**. It auto-discovers your infrastructure by connecting to the Docker daemon, inspecting running containers, and probing databases and storage services. The UI is served by the backend and reflects real backend state — no manual inventory needed.
+## What this is
 
-| Capability | Details |
+**GoXIO** is the public, AGPL-licensed topology engine used inside the Omxio
+platform. Customers and platform admins open it through Omxio auth; this repo
+is the corresponding source for the engine.
+
+It auto-discovers Docker containers, Kubernetes workloads, PostgreSQL / MySQL /
+MongoDB / Redis / Elasticsearch / S3 / HTTP services, and serves a live
+interactive graph with health over WebSocket.
+
+## Upstream pin
+
+| Field | Value |
 |---|---|
-| **Auto-discovery** | Detects infrastructure from Docker containers and Kubernetes clusters — no manual inventory needed |
-| **Kubernetes** | Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services — with informer-based real-time watching |
-| **Docker** | Classifies running containers, extracts credentials, watches Docker events, honors `graphgo.*` labels to override type/DSN/node-type/name or ignore a container |
-| **PostgreSQL** | Tables, foreign key relationships, schema topology |
-| **MongoDB** | Databases and collections |
-| **MySQL** | Tables, foreign key relationships |
-| **Redis** | Keyspaces and key distribution |
-| **Elasticsearch** | Indices, cluster health, shard status |
-| **S3 / MinIO** | Buckets and top-level prefixes |
-| **HTTP services** | Health endpoints, dependency mapping between services |
-| **Real-time health** | WebSocket-powered live status updates every 5 seconds |
-| **Interactive graph** | Swimlane layout, namespace group containers, pan/zoom, filter by type/health, search nodes |
+| Upstream project | https://github.com/guilherme-grimm/graph-go |
+| Pinned commit SHA | `6c4f822b7f256f8e76fc082bf39861bdbcb727f8` |
+| Upstream tip at fork | `6c4f822` — *Merge pull request #59 from guilherme-grimm/fix/compose-adapter-collision* |
+| License | AGPL-3.0 (see `LICENSE`) |
+| Copyright / attribution | see `NOTICE` |
 
-### Docker labels
+Go module path remains `github.com/guilherme-grimm/graph-go` for compatibility
+with upstream until a coordinated rename. The CLI binary and UI brand are **goxio** / **GoXIO**.
 
-graph-go respects a small set of `graphgo.*` container labels (set them on any container you want to control):
-
-| Label | Effect |
-|---|---|
-| `graphgo.ignore=true` | Skip this container entirely |
-| `graphgo.type=postgres` | Force the adapter type (`postgres`, `mongodb`, `mysql`, `redis`, `elasticsearch`, `s3`, `http`) |
-| `graphgo.dsn=...` | Inject a connection string (DSN for postgres/mysql, URI for mongodb, falls back to `dsn` otherwise) |
-| `graphgo.node-type=gateway` | Override the visual node type (`service`, `gateway`, `auth`, `api`, `queue`, `cache`) |
-| `graphgo.name=...` | Override the node name shown in the graph and used in node IDs / logs |
-
-Use these to rescue misclassified containers, point graph-go at a custom DSN, or hide a container from the graph without removing it.
-
----
-
-## Quick Start — try it in 30 seconds
-
-Boot the seeded demo stack with the CLI. This is the fastest way to see graph-go against a realistic environment and the intended onboarding path for first-time users:
+## Quick start (demo)
 
 ```bash
-git clone https://github.com/guilherme-grimm/graph-go.git
-cd graph-go
+git clone https://github.com/alkuneemi/goxio-engine.git
+cd goxio-engine
 go run ./cmd/app demo
 ```
 
-Open **http://localhost:8080**. The command runs attached via Docker Compose. Press `Ctrl+C` to stop the attached session.
+Open **http://localhost:8080**. The header shows **GoXIO** and a **Source** link
+back to this repository (AGPL corresponding-source offer).
 
-The first run can take several minutes on a cold machine because Docker may need to pull base images and build the local demo images. Later runs are much faster.
+## Production on Omxio hosts
 
-The demo stack expects these host ports to be free: `8080`, `5432`, `27017`, `9000`, and `9001`.
+1. **Read-only Docker socket proxy** — required. Never mount the raw Docker
+   socket into GoXIO on production. Details: [`docs/GOXIO-OMXIO.md`](docs/GOXIO-OMXIO.md)
+   and `docker-compose.demo.yml` (`tecnativa/docker-socket-proxy`, `POST=0`).
+2. **Vaulted credentials** — prefer secrets from the Omxio vault injected as
+   env vars; never commit real DSNs/passwords; never log secrets (redaction is
+   enabled in the adapter registry).
+3. **No public ports** — place GoXIO behind Omxio login; do not expose `:8080`
+   to the internet.
+4. Keep the visible **Source** link (or equivalent source offer) in any modified build.
 
-If you need an explicit teardown afterward:
-
-```bash
-docker compose -f docker-compose.demo.yml down
-```
-
----
-
-## Run against your own stack
-
-One container, one port. Mount the Docker socket read-only and graph-go auto-discovers everything running on the host:
-
-```bash
-docker run -d -p 8080:8080 \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  --group-add "$(stat -c %g /var/run/docker.sock)" \
-  ghcr.io/guilherme-grimm/graph-go:latest
-```
-
-> The image runs as a non-root user, so `--group-add` grants it the socket's group (`stat -c` is Linux; on macOS start with `--group-add 0`). If Docker discovery still falls back to YAML-only, the startup log says what to change (including the exact `--group-add` value when that is the fix).
->
-> graph-go only reads from the Docker API (list, inspect, events). `:ro` does not restrict API calls, though: anything that can reach the socket can control the daemon. For least privilege, put a read-only API proxy such as [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) in front of the socket and point graph-go at it with `DOCKER_HOST=tcp://<proxy>:2375` (no socket mount or `--group-add` needed). [`docker-compose.demo.yml`](docker-compose.demo.yml) shows a working setup.
-
-Open **http://localhost:8080**. Auto-discovery handles Docker containers and (when a kubeconfig or in-cluster service account points at a reachable cluster) Kubernetes resources without any config file.
-
-For services that live outside Docker/Kubernetes (remote databases, managed cloud services), mount a config file — see [Configuration](#configuration).
-
----
-
-## Pre-built binary
-
-Single self-contained binary — UI is embedded, but the entrypoint is still the CLI.
+Example (proxy pattern):
 
 ```bash
-# Linux amd64 (requires the GitHub CLI; browse Releases for other platforms)
-gh release download --repo guilherme-grimm/graph-go --pattern 'graph-go_*_linux_amd64.tar.gz' --clobber
-tar xzf graph-go_*_linux_amd64.tar.gz
-./graph-go serve   # or just `./graph-go` - same thing
+# DOCKER_HOST points at the read-only proxy, not unix:///var/run/docker.sock
+docker run --rm -e DOCKER_HOST=tcp://docker-proxy:2375 goxio:local serve
 ```
-
-Open **http://localhost:8080**. Other platforms on the [Releases page](https://github.com/guilherme-grimm/graph-go/releases).
-
----
 
 ## Commands
 
-| Command | What it does |
+| Command | Purpose |
 |---|---|
-| `graph-go demo` | Boot the seeded Docker Compose demo stack from the repository and stream its output in the foreground. |
-| `graph-go serve` | Start the HTTP server with auto-discovery and live updates (default - same as running with no args). Once the first discovery finishes it prints a ✓/✗ line per adapter to stderr, with what it found or why it failed (skipped with `--log-format json`). |
-| `graph-go scan` | Run discovery once and emit the graph to stdout. `--format json` (default) for piping into `jq` or CI checks; `mermaid`, `markdown` (Mermaid in a fenced block, renders on GitHub) or `dot` (Graphviz) for diagrams. `graph-go export` is an alias. |
-| `graph-go validate` | Check the config file and exit non-zero if it's invalid. Reports every missing field, unknown connection type, and unknown key (which `serve` silently ignores). No server is started. |
-| `graph-go mcp` | Serve the topology to AI agents over the Model Context Protocol (stdio). See [Use with AI agents (MCP)](#use-with-ai-agents-mcp). |
-| `graph-go version` | Print version, commit, and build date. |
-| `graph-go --health-check` | Hit local `/health` and exit `0`/`1`. Used by the container `HEALTHCHECK`; not for interactive use. |
+| `goxio demo` | Seeded Compose demo |
+| `goxio serve` | HTTP + discovery + live UI (default) |
+| `goxio scan` / `export` | One-shot graph (`json`, `mermaid`, `markdown`, `dot`) |
+| `goxio validate` | Config check |
+| `goxio mcp` | MCP server for agents |
+| `goxio version` | Version / commit / build date |
 
-Global flags (apply to every subcommand): `--config`, `--log-level`, `--log-format`. See `graph-go <command> --help` for the full per-command surface.
+Build:
 
-Typical flow:
+```bash
+make build          # → bin/goxio (frontend embedded)
+./bin/goxio serve
+```
 
-1. `graph-go demo` for a realistic local walkthrough.
-2. `graph-go serve` to run against your own infrastructure.
-3. `graph-go scan` for one-shot automation, exports, or CI checks — e.g. `graph-go export --format markdown --log-level=warn > ARCHITECTURE.md` for a diagram that renders on GitHub.
+## Capabilities (inherited from graph-go)
 
----
-
-## Use with AI agents (MCP)
-
-`graph-go mcp` gives coding agents (Claude Code, Cursor, any MCP client) a deterministic view of your infrastructure, so they stop guessing from compose files and manifests.
-
-[![Claude Code asking graph-go which databases the demo stack runs, which services use them, and whether anything is unhealthy](./docs/graph-go-mcp.gif)](./docs/graph-go-mcp.mp4)
-
-*A real Claude Code session against `graph-go demo`: one question, graph-go's tools, and an answer built from the live graph, including the backup bucket nothing writes to.*
-
-It runs over stdio and exposes three **read-only** tools:
-
-| Tool | Use it for |
+| Capability | Details |
 |---|---|
-| `get_topology` | What exists, how it connects, and its health. Filters: `namespaces`, `types`, `health`, `name`. Above 300 nodes it returns a summary (counts per namespace and type, every unhealthy or degraded node in full) and says how to narrow it. |
-| `get_node` | One node with every edge into or out of it and its neighbours: "what depends on this Redis?" |
-| `find_nodes` | Look up ids by name. |
-
-Discovery starts in the background when the client launches the server (the handshake never waits on it) and stays warm for the session; every answer carries `observed_at` for the health it reflects. Credentials in connection strings and errors are masked before anything is returned, and each response is capped (`--max-response-bytes`, default 80 KB).
-
-**Claude Code:**
-
-```bash
-claude mcp add graph-go -- graph-go mcp
-# with a config file:
-claude mcp add graph-go -- graph-go mcp --config /path/to/config.yaml
-```
-
-**Other clients** (Cursor, Claude Desktop, …) use the usual `mcpServers` block:
-
-```json
-{
-  "mcpServers": {
-    "graph-go": { "command": "graph-go", "args": ["mcp"] }
-  }
-}
-```
-
-**From the container image** (`-i` keeps stdin open for the protocol; the socket flags are the same as [above](#run-against-your-own-stack)):
-
-```json
-{
-  "mcpServers": {
-    "graph-go": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm",
-               "-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
-               "--group-add", "<docker socket gid>",
-               "ghcr.io/guilherme-grimm/graph-go:latest", "./graph-go", "mcp"]
-    }
-  }
-}
-```
-
-Logs go to stderr at `warn` level (`--log-level` / `LOG_LEVEL` to change). The design and the reasoning behind the tool surface are in [ADR-0003](docs/adr/0003-mcp-server.md).
-
----
-
-## Ports
-
-| Port | Purpose |
-|---|---|
-| `8080` | graph-go (UI + API + WebSocket — production) |
-| `5173` | Vite dev server (development only — see [CONTRIBUTING.md](CONTRIBUTING.md)) |
-| `9001` | RustFS console at `/rustfs/console/` (demo stack only) |
-
----
-
-## Configuration
-
-Auto-discovery is the path. Mount the Docker socket and/or run inside a Kubernetes cluster — graph-go discovers your infrastructure with **no config file needed**.
-
-Use the YAML config (`conf/config.yaml`) only as an escape hatch for services that aren't reachable via discovery — remote databases, managed cloud services, external endpoints. See [`conf/config.sample.yaml`](conf/config.sample.yaml) for the full schema — examples for every adapter and every config block (`server`, `docker`, `kubernetes`, `connections`).
-
-To use a config file with the Docker run above:
-
-```bash
-docker run -d -p 8080:8080 \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  --group-add "$(stat -c %g /var/run/docker.sock)" \
-  -v $(pwd)/conf/config.yaml:/app/conf/config.yaml:ro \
-  ghcr.io/guilherme-grimm/graph-go:latest
-```
-
-> **Authorized use only:** graph-go is for visualizing infrastructure you own or have permission to access. Do not point it at systems without authorization.
-
----
-
-## Architecture Overview
-
-### Backend (Go)
-
-```
-                          ┌─────────────────────────────────────┐
-                          │         Discoverer Interface         │
-                          │  Discover() · Watch() · Close()     │
-                          └──────────┬──────────┬───────────────┘
-                                     │          │
-                          ┌──────────▼──┐  ┌────▼──────────────┐
-                          │   Docker    │  │   Kubernetes       │
-                          │  Discoverer │  │   Discoverer       │
-                          │ (containers,│  │ (informers, pods,  │
-                          │  classify,  │  │  deployments,      │
-                          │  events)    │  │  services, health) │
-                          └──────┬──────┘  └────┬──────────────┘
-                                 │               │
-                          ┌──────▼───────────────▼──────┐
-                          │  Parallel Discovery + Merge  │
-                          │  (concatenate ServiceInfo)   │
-                          └──────────────┬──────────────┘
-                                         │
-Config (YAML) ──→ YAML Merge ───────────▶│
-                                         ▼
-                          ┌─────────────────────────────┐
-                          │     Adapter Registry         │
-                          │  ├─ PostgreSQL  → Tables + FK│
-                          │  ├─ MongoDB    → Collections │
-                          │  ├─ MySQL      → Tables + FK │
-                          │  ├─ Redis      → Keyspaces   │
-                          │  ├─ Elasticsearch → Indices   │
-                          │  ├─ S3         → Buckets      │
-                          │  └─ HTTP       → Health + deps│
-                          │                               │
-                          │  + Topology (K8s nodes/edges) │
-                          └──────────────┬───────────────┘
-                                         ▼
-                          Graph Model (Nodes + Edges)
-                                         ▼
-                          REST API + WebSocket (Real-time)
-```
-
-**Key Components:**
-- **Discoverer Interface**: Uniform contract (`Discover`, `Watch`, `Close`) for all discovery backends — Docker and Kubernetes run in parallel, results are concatenated
-- **Docker Discovery**: Inspects containers, classifies images, extracts credentials from env vars, watches Docker events for live topology changes
-- **Kubernetes Discovery**: Uses client-go informers with debounced event handling; discovers Namespaces, Deployments, StatefulSets, DaemonSets, Pods, and Services with health mapping
-- **Adapters**: Implement the `Adapter` interface to probe databases and storage services
-- **Registry**: Manages adapters and topology sets, creates service-level parent nodes, aggregates graph data
-- **Cache**: 30-second TTL with singleflight pattern to prevent thundering herd
-- **WebSocket**: Streams health changes every 5 seconds, batched into one message
-
-### Frontend (React + TypeScript)
-
-- **Swimlane Layout**: Namespace-aware layout with zone classification (system, infra, application namespaces)
-- **Group Containers**: K8s namespaces render as bounding boxes via React Flow grouping
-- **Large clusters**: past 300 nodes, namespaces start collapsed into summary nodes (pod/workload counts, worst health) and other layouts switch to Swimlane. Namespaces can be hidden, isolated, collapsed or expanded from the header's Namespaces menu, and nodes filtered by name, type, health and source. All of it lives in the URL (`?hide=`, `?collapse=`, `?q=` …), so a filtered view can be shared
-- **Node Inspector**: Side panel showing detailed metadata and connections
-- **WebSocket Hook**: Real-time health updates without polling
-
-### Node Hierarchy
-
-```
-Adapter-discovered:
-  Service Node (postgres/mongodb/s3)
-      └─ Database/Bucket Node
-          └─ Table/Collection/Prefix Node
-
-Kubernetes-discovered:
-  Namespace (group container)
-      └─ Deployment / StatefulSet / DaemonSet
-          └─ Pod
-      └─ K8sService ──routes_to──→ Pod
-```
-
-Edges represent relationships (`contains`, `foreign_key`, `routes_to`, etc.).
-
----
-
-## Tech Stack
-
-**Backend:**
-- Go 1.25.6
-- gorilla/mux (HTTP routing)
-- k8s.io/client-go (Kubernetes discovery + informers)
-- pgxpool (PostgreSQL)
-- mongo-driver v2 (MongoDB)
-- go-sql-driver/mysql (MySQL)
-- go-redis/v9 (Redis)
-- go-elasticsearch/v8 (Elasticsearch)
-- AWS SDK v2 (S3)
-- coder/websocket (WebSocket)
-- testcontainers-go (integration tests)
-
-**Frontend:**
-- TypeScript
-- React 19
-- @xyflow/react v12 (graph visualization)
-- Vite (build tool)
-
-**Infrastructure:**
-- Docker + Docker Compose
-- PostgreSQL 17
-- MongoDB 7
-- MySQL 8
-- Redis 7
-- Elasticsearch 8
-- RustFS (S3-compatible)
-
----
-
-## Testing
-
-### Unit Tests
-
-```bash
-go test ./...
-```
-
-Runs without Docker. Includes pure function tests and HTTP handler tests.
-
-### Integration Tests
-
-```bash
-go test -tags=integration -v -timeout=5m ./internal/adapters/...
-```
-
-Requires Docker. Uses [testcontainers-go](https://golang.testcontainers.org/) to spin up real database instances (PostgreSQL, MongoDB, MySQL, Redis, Elasticsearch, RustFS for S3) — no mocks.
-
-Every adapter runs through the **contract test suite** (`adaptertest.RunContractTests`) which validates:
-- Connect/disconnect lifecycle
-- Node/edge discovery (unique IDs, valid parent refs, correct types)
-- Health metrics (status key, required keys)
-
-Run a single adapter's tests:
-
-```bash
-go test -tags=integration -v ./internal/adapters/redis/
-```
-
-### All Tests
-
-```bash
-make test  # unit + type-check
-go test -tags=integration -timeout=5m ./internal/adapters/...  # integration
-```
-
----
-
-## API Reference
-
-### GET `/api/graph`
-Returns the full infrastructure graph (nodes + edges).
-
-**Response:**
-```json
-{
-  "data": {
-    "nodes": [
-      {
-        "id": "service-postgres",
-        "type": "postgres",
-        "name": "postgres",
-        "metadata": { "adapter": "postgres" },
-        "health": "healthy"
-      }
-    ],
-    "edges": [
-      {
-        "id": "edge-1",
-        "source": "service-postgres",
-        "target": "pg-mydb",
-        "type": "contains",
-        "label": "contains"
-      }
-    ]
-  }
-}
-```
-
-### GET `/api/node/{id}`
-Returns details for a specific node.
-
-### GET `/api/health`
-Returns adapter health status (ok/degraded/error).
-
-### WS `/websocket`
-Streams real-time updates. Two message types are emitted, both wrapped as `{ "type": "...", "payload": { ... } }`. There is no `timestamp` field — clients infer ordering by arrival.
-
-**`health_batch`** — sent every 5s with the nodes whose health changed since the previous tick (the first two ticks after connecting, and the tick after a `graph_update`, carry every node so a batch the client couldn't apply yet is corrected). Ticks with no changes send nothing. Adapter-owned nodes get health via the adapter lookup; topology nodes (e.g. Kubernetes resources) carry health directly on the node.
-```json
-{
-  "type": "health_batch",
-  "payload": {
-    "updates": [
-      { "nodeId": "service-postgres", "health": "healthy" },
-      { "nodeId": "k8s-shop-pod-api-7d9f", "health": "unhealthy" }
-    ]
-  }
-}
-```
-`health` is one of `healthy`, `degraded`, `unhealthy`.
-
-**`graph_update`** — sent when the set of node IDs changes (a node was added or removed by discovery). `payload` is empty; clients should re-fetch `/api/graph`.
-```json
-{
-  "type": "graph_update",
-  "payload": {}
-}
-```
-
----
-
-## Adding a New Adapter
-
-1. **Create adapter package** in `internal/adapters/{name}/`
-2. **Implement the `Adapter` interface:**
-   ```go
-   type Adapter interface {
-       Connect(config ConnectionConfig) error
-       Discover() ([]nodes.Node, []edges.Edge, error)
-       Health() (HealthMetrics, error)
-       Close() error
-   }
-   ```
-3. **Add integration tests** (required) — create `{name}_integration_test.go` with:
-   - Build tag `//go:build integration`
-   - `TestMain` using testcontainers-go to start a real instance
-   - Seed representative data
-   - Call `adaptertest.RunContractTests` to validate the interface contract
-   - Add adapter-specific tests (filtering, ID format, metadata, etc.)
-4. **Add one entry** to `Default()` in `internal/adapters/catalog/catalog.go` — the only place adapters are registered
-5. **Add node type** in `internal/graph/nodes/nodes.go`
-6. **Update frontend types** in `webui/src/types/graph.ts`
-7. **Add icon** in `webui/src/components/graph/CustomNode.tsx`
-
-## Adding a New Discoverer
-
-Discoverers live in `internal/discovery/{name}/` and implement the `Discoverer` interface:
-
-```go
-type Discoverer interface {
-    Name() string
-    Discover(ctx context.Context) ([]ServiceInfo, error)
-    Watch(ctx context.Context, onChange func()) error
-    Close() error
-}
-```
-
-1. **Create discoverer package** in `internal/discovery/{name}/`
-2. **Implement the `Discoverer` interface** — return `[]ServiceInfo` from `Discover()`. Topology-producing discoverers (like K8s) populate `Nodes`/`Edges` directly; adapter-oriented ones (like Docker) populate `Config` for adapter bridging.
-3. **Wire into server** in `internal/server/server.go` — add a `build{Name}Discovery()` function and call it alongside the existing discoverers.
-4. **Add integration tests** with `//go:build integration` — use real infrastructure (kind/k3d for K8s, testcontainers for others). No mocks.
-
-See `CONTRIBUTING.md` for detailed guidance.
-
----
-
-## Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
-- Development setup
-- Code style conventions
-- How to add new adapters
-- Submitting pull requests
-
----
-
-## Use Scope & Ethics
-
-**Intended Use:**
-- Visualizing and monitoring infrastructure you own or have authorization to access
-- DevOps dashboards and topology mapping
-- Infrastructure documentation and onboarding
-- Exploring database schemas and relationships
-
-**Not Intended For:**
-- Unauthorized system scanning or reconnaissance
-- Security testing without explicit permission
-- Accessing systems you don't own or control
-
-Users are responsible for ensuring they have proper authorization before connecting graph-go to any infrastructure.
-
----
-
-## License
-
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
-
-See the [LICENSE](LICENSE) file for details. AGPL requires that modified versions used over a network must also be open-sourced.
-
----
-
-## CI/CD & Releases
-
-The project uses GitHub Actions for continuous integration and automated releases.
-
-- **CI** runs on every push/PR to `main` — backend unit tests, integration tests (testcontainers), and frontend build
-- **Releases** are triggered by version tags (`v*`) and produce:
-  - Cross-platform binaries (Linux, macOS, Windows) via [GoReleaser](https://goreleaser.com)
-  - Single Docker image pushed to `ghcr.io/guilherme-grimm/graph-go`
-
-To create a release:
-```bash
-git tag v0.1.0
-git push --tags
-```
-
----
-
-## Roadmap
-
-- [x] Docker auto-discovery
-- [x] HTTP service health monitoring
-- [x] MySQL adapter
-- [x] Redis adapter
-- [x] Elasticsearch adapter
-- [x] Integration tests with testcontainers-go (all adapters)
-- [x] Contract test suite for adapter interface compliance
-- [x] Discoverer interface (pluggable discovery backends)
-- [x] Kubernetes orchestrator (Namespaces, Deployments, StatefulSets, DaemonSets, Pods, Services)
-- [x] Informer-based real-time K8s watching with debounce
-- [x] Swimlane layout with namespace group containers
-- [x] Large-cluster mode: namespace collapse, filters, auto-swimlane, batched health updates (v0.4.0-rc.1)
-- [ ] K8s adapter bridging (classify pods by image, connect adapters to databases in pods)
-- [ ] Flow observability (real-time data flow visualization)
-- [ ] Integrated stress trigger (load generation with real-time impact visualization)
-- [ ] Kafka adapter
-- [ ] Additional orchestrators (ECS, Nomad)
-- [ ] Graph persistence (save/load views)
-- [ ] Multi-region visualization
-- [ ] Alert configuration per node
-
----
-
-## Support
-
-- **Issues**: [github.com/guilherme-grimm/graph-go/issues](https://github.com/guilherme-grimm/graph-go/issues)
-- **Discussions**: [github.com/guilherme-grimm/graph-go/discussions](https://github.com/guilherme-grimm/graph-go/discussions)
-
----
-
-**Built with ❤️ for DevOps and infrastructure engineers**
+| Docker | Containers, labels (`graphgo.*`), events via read-only API |
+| Kubernetes | Namespaces, Deployments, Pods, Services, informers |
+| PostgreSQL / MySQL | Tables + FK edges |
+| MongoDB / Redis / ES / S3 | Collections, keyspaces, indices, buckets |
+| HTTP services | Health + dependency edges |
+| Live health | WebSocket updates |
+
+## Security
+
+- Authorized infrastructure only (systems you own or have permission to map).
+- Prefer vaulted env for DB and cloud credentials.
+- Never log secrets; metadata and errors are redacted before UI / MCP / scan output.
+- Production Docker access must go through a read-only socket proxy.
+
+## License and source
+
+This engine is **AGPL-3.0**. If you modify GoXIO and let others use it over a
+network, you must offer them the corresponding source of your modified version.
+The Omxio platform application that wraps GoXIO remains separate when the engine
+runs as an isolated service exchanging JSON only.
+
+- License text: [`LICENSE`](LICENSE)
+- Attribution: [`NOTICE`](NOTICE)
+- Public source: https://github.com/alkuneemi/goxio-engine
+- Upstream: https://github.com/guilherme-grimm/graph-go @ `6c4f822b7f256f8e76fc082bf39861bdbcb727f8`
+
+## العربية (ملخص)
+
+**GoXIO** محرك خريطة السيرفر في منصة أومكسيو. حط IP السيرفر، وGoXIO يرسم لك كل شي فيه: إيش شغال، إيش نايم، وإيش ماكل المساحة، بدون ما يلمس شي (قراءة فقط عبر وسيط Docker).
+
+- الرخصة AGPL-3.0: لازم يبقى مصدر المحرك المعدّل متاحاً علناً (هذا المستودع).
+- كلمات المرور من الخزنة، ما تتنكتب في الشات ولا في اللوجات.
+- ما نفتح منافذ للعموم؛ الاستخدام من داخل أومكسيو للعملاء وإدارة المنصة الأم.
