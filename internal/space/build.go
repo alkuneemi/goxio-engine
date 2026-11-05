@@ -19,14 +19,16 @@ type diskObs struct {
 }
 
 type volumeObs struct {
-	Name       string
-	Mountpoint string
-	Kind       string
-	Digest     string
-	Tags       []string
-	SizeBytes  int64
-	SizeState  string // measured, unreadable, timeout, pending, skipped, unknown
-	SizeReason string
+	Name         string
+	Mountpoint   string
+	Kind         string
+	Digest       string
+	Tags         []string
+	SizeBytes    int64
+	SizeState    string // measured, partial, unreadable, timeout, pending, skipped, unknown
+	SizeReason   string
+	SizeSoFar    int64
+	SizeProgress string
 }
 
 type mountObs struct {
@@ -55,17 +57,19 @@ type diskMount struct {
 }
 
 type volRec struct {
-	id         string
-	name       string
-	path       string
-	size       int64
-	sizeState  string
-	sizeReason string
-	kind       string
-	digest     string
-	tags       []string
-	parent     string
-	containers []string
+	id           string
+	name         string
+	path         string
+	size         int64
+	sizeState    string
+	sizeReason   string
+	sizeSoFar    int64
+	sizeProgress string
+	kind         string
+	digest       string
+	tags         []string
+	parent       string
+	containers   []string
 }
 
 // buildSnapshot turns read-only observations into the space hierarchy.
@@ -221,16 +225,18 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 			parentPath = "/"
 		}
 		v := &volRec{
-			id:         spaceID(idKind, material),
-			name:       display,
-			path:       path,
-			size:       in.SizeBytes,
-			sizeState:  state,
-			sizeReason: in.SizeReason,
-			kind:       kind,
-			digest:     in.Digest,
-			tags:       append([]string{}, in.Tags...),
-			parent:     diskFor(mounts, parentPath),
+			id:           spaceID(idKind, material),
+			name:         display,
+			path:         path,
+			size:         in.SizeBytes,
+			sizeState:    state,
+			sizeReason:   in.SizeReason,
+			sizeSoFar:    in.SizeSoFar,
+			sizeProgress: in.SizeProgress,
+			kind:         kind,
+			digest:       in.Digest,
+			tags:         append([]string{}, in.Tags...),
+			parent:       diskFor(mounts, parentPath),
 		}
 		vols[key] = v
 		return v
@@ -418,6 +424,12 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		}
 		putStr(md, "path", v.path)
 		putStr(md, "size_reason", v.sizeReason)
+		if v.sizeProgress != "" {
+			md["size_progress"] = v.sizeProgress
+		}
+		if v.sizeState == "partial" && v.sizeSoFar > 0 {
+			md["size_bytes_so_far"] = v.sizeSoFar
+		}
 		putStr(md, "digest", v.digest)
 		if v.kind == "volume" {
 			putStr(md, "volume_name", v.name)
@@ -427,6 +439,14 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		}
 		if state == "measured" {
 			putSize(md, v.size)
+		} else if state == "partial" {
+			md["size_bytes_so_far"] = v.sizeSoFar
+			putStr(md, "size_progress", v.sizeProgress)
+			delete(md, "size_bytes")
+			delete(md, "size")
+		} else if state == "unreadable" || state == "timeout" {
+			delete(md, "size_bytes")
+			delete(md, "size")
 		}
 		b.addNode(newNode(v.id, string(nodes.TypeVolume), v.name, v.parent, health, sourceHost, host, md))
 		if v.parent != "" {

@@ -27,32 +27,36 @@ const (
 
 // Snapshot is one read-only view of a server's space hierarchy.
 type Snapshot struct {
-	CollectedAt         time.Time    `json:"collected_at"`
-	Host                string       `json:"host"`
-	Source              string       `json:"source"`
-	HostWrites          bool         `json:"host_writes"`
-	Detail              string       `json:"detail,omitempty"`
-	Partial             bool         `json:"partial"`
-	PartialReasons      []string     `json:"partial_reasons,omitempty"`
-	Complete            bool         `json:"complete"`
-	MissingSizeCount    int          `json:"missing_size_count"`
-	TruncatedCount      int          `json:"truncated_count"`
-	ListedContainers    int          `json:"listed_containers"`
-	InspectedContainers int          `json:"inspected_containers"`
-	Volumes             int          `json:"volumes"`
-	Images              int          `json:"images"`
-	Folders             int          `json:"folders"`
-	Mounts              int          `json:"mounts"`
-	Databases           int          `json:"databases"`
-	Repos               int          `json:"repos"`
-	Accounts            int          `json:"accounts"`
-	SizesMeasured       int          `json:"sizes_measured"`
-	SizesPending        int          `json:"sizes_pending"`
-	SizesTimeout        int          `json:"sizes_timeout"`
-	SizesUnreadable     int          `json:"sizes_unreadable"`
-	ListingComplete     bool         `json:"listing_complete"`
-	Nodes               []nodes.Node `json:"nodes"`
-	Edges               []edges.Edge `json:"edges"`
+	CollectedAt         time.Time `json:"collected_at"`
+	Host                string    `json:"host"`
+	Source              string    `json:"source"`
+	HostWrites          bool      `json:"host_writes"`
+	Detail              string    `json:"detail,omitempty"`
+	Partial             bool      `json:"partial"`
+	PartialReasons      []string  `json:"partial_reasons,omitempty"`
+	Complete            bool      `json:"complete"`
+	MissingSizeCount    int       `json:"missing_size_count"`
+	TruncatedCount      int       `json:"truncated_count"`
+	ListedContainers    int       `json:"listed_containers"`
+	InspectedContainers int       `json:"inspected_containers"`
+	Volumes             int       `json:"volumes"`
+	Images              int       `json:"images"`
+	Folders             int       `json:"folders"`
+	Mounts              int       `json:"mounts"`
+	Databases           int       `json:"databases"`
+	Repos               int       `json:"repos"`
+	Accounts            int       `json:"accounts"`
+	SizesMeasured       int       `json:"sizes_measured"`
+	SizesPending        int       `json:"sizes_pending"`
+	SizesTimeout        int       `json:"sizes_timeout"`
+	SizesUnreadable     int       `json:"sizes_unreadable"`
+	SizesPartial        int       `json:"sizes_partial"`
+	ListingComplete     bool      `json:"listing_complete"`
+	// SizeWork is per-path progress for directories du cannot finish in one pass.
+	// It is not a claim that those bytes are a complete total.
+	SizeWork map[string]SizeNode `json:"size_work,omitempty"`
+	Nodes    []nodes.Node        `json:"nodes"`
+	Edges    []edges.Edge        `json:"edges"`
 }
 
 // HasSpace reports whether the snapshot found a disk, volume, or container.

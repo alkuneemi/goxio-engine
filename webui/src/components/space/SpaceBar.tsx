@@ -95,7 +95,7 @@ export default function SpaceBar({ graph, summary, filters, onFilterChange, view
 
       <span className={styles.source}>
         {summary
-          ? `${summary.status || summary.source || 'space'} · ${summary.host || 'server'} · read-only${summary.listing_complete === false ? ' · inspect incomplete' : ''}${typeof summary.volumes === 'number' ? ` · ${summary.volumes} volumes` : ''}${typeof summary.images === 'number' ? ` · ${summary.images} images` : ''}${typeof summary.folders === 'number' ? ` · ${summary.folders} folders` : ''}${summary.sizes_timeout ? ` · ${summary.sizes_timeout} size timeouts` : ''}${summary.sizes_pending ? ` · ${summary.sizes_pending} sizes pending` : ''}${summary.sizes_unreadable ? ` · ${summary.sizes_unreadable} unreadable` : ''}`
+          ? `${summary.status || summary.source || 'space'} · ${summary.host || 'server'} · read-only${summary.listing_complete === false ? ' · inspect incomplete' : ''}${typeof summary.volumes === 'number' ? ` · ${summary.volumes} volumes` : ''}${typeof summary.images === 'number' ? ` · ${summary.images} images` : ''}${typeof summary.folders === 'number' ? ` · ${summary.folders} folders` : ''}${summary.sizes_partial ? ` · ${summary.sizes_partial} sizing in progress` : ''}${summary.sizes_timeout ? ` · ${summary.sizes_timeout} size timeouts` : ''}${summary.sizes_pending ? ` · ${summary.sizes_pending} sizes pending` : ''}${summary.sizes_unreadable ? ` · ${summary.sizes_unreadable} unreadable` : ''}`
           : 'read-only'}
       </span>
       <button

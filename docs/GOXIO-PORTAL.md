@@ -37,9 +37,14 @@ On the remote host (or a container whose mount namespace is that host), collect 
 ```bash
 export GOXIO_HOST_ROOT=/host-disk   # only if df shows that collector mount
 export GOXIO_DU_BUDGET=40           # probes per pass; unfinished paths stay pending or timeout
-goxio collect -o /tmp/snapshot.json
-# later pass: keep measured sizes, retry timeouts (8s) and pending paths
-goxio collect --resume /tmp/snapshot.json -o /tmp/snapshot.json
+# Each pass is bounded. A directory that does not finish is split into
+# children and continued on the next pass. Repeat until sizes_partial is 0
+# or the remaining paths are unreadable. Do not expect one 8s du of /usr or /var to finish.
+f=/var/lib/goxio/sahabify-snapshot.json
+GOXIO_DU_BUDGET=40 goxio collect -o "$f"
+GOXIO_DU_BUDGET=40 goxio collect --resume "$f" -o "$f"
+# safe to run again; measured subtrees are not walked from scratch
+
 curl -fsS -X POST https://goxio.example/api/space/ingest \
   -H "Authorization: Bearer $(cat /root/sahabify.ingest.token)" \
   -H 'content-type: application/json' \
@@ -78,7 +83,7 @@ Mutating browser calls send `X-GoXIO-Request: 1` and `X-CSRF-Token` from `GET /a
 
 - Every listed container is kept. Inspect that stops early is `inspect_state: partial` and `truncated_count` on the summary. There is no silent cap at 60.
 - `/api/space` counts volumes, images, folders, and mounts separately. An image is not a volume. Two tags of one digest are one image. A bind of a volume mountpoint is not a second volume.
-- Volume and folder sizes that `du` cannot finish are `timeout`, `unreadable`, or `pending`, each with its own count. `missing_size_count` is their sum. `complete` stays false while any of those remain. `listing_complete` can still be true when every container was inspected. `goxio collect --resume snapshot.json` keeps sizes already measured and retries the rest (`GOXIO_DU_WORKERS` defaults to 2, capped at 4). A timed-out path is retried at 8s. The HTTP request that receives a snapshot does not run `du`.
+- A directory `du` that does not finish is split into its children and continued on the next `goxio collect --resume`. Finished subtrees are kept. `size_state: partial` with `size_bytes_so_far` and `size_progress` means the walk is in progress, not that the total is known. `unreadable` has no size. `complete` stays false until every such walk is measured or explicitly unreadable. `listing_complete` can still be true. The HTTP ingest path does not run `du`.
 - `df` rows are filesystem mounts. Partitions such as `sda1`, `sda15`, and `sda16` share a device-group node and are not added together into a fake disk total. A mapper device stays its own group.
 - Images and generic path roots (`/var`, `/var/lib`, `/var/lib/containerd`, `/opt`, `/root`, `/usr`, and similar) are nodes when the collector can see them. A timed-out `du` still leaves the node.
 - Database nodes are created only from database-name environment variables or `goxio.database`. Repo and GitHub nodes are created only from explicit GitHub labels. Other containers stay on the map with `provenance: unknown`.
@@ -117,7 +122,7 @@ This is not a claim that the portal is fully secure.
 - No second factor, no self-service password reset, no email. An operator resets a password by creating a new account or replacing the hash out of band.
 - The engine will not pull a map over SSH. If the collector on the remote host does not post, the server stays pending.
 - `goxio scan` and `goxio mcp` still describe the engine host’s own Docker or Kubernetes discovery when an operator runs them on that host. They are not served to portal users. Server stderr from discovery can still name local containers.
-- A size that times out is reported and is not counted as measured. `complete` stays false until those paths are measured or the tree is small enough for `du` to finish. Raising `GOXIO_DU_TIMEOUT` is not a switch; the retry path uses 8s. Huge directories can remain `timeout` on every pass.
+- A size walk that has not finished is `partial` or `timeout`, with progress saved in the snapshot. Repeating the same full-tree `du` is not how a large directory completes. Unreadable paths stay unreadable and are not stored as zero. `complete` stays false while any walk is unfinished.
 - There is no MFA. A long password and the portal session are the demo bar.
 - A long-lived WebSocket is checked again about every five seconds and then closed if the session was revoked. There is a short window.
 - Cookie `Secure` is correct only when the browser talks HTTPS. Leave `GOXIO_COOKIE_SECURE` at its default in production.

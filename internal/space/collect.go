@@ -54,22 +54,16 @@ func CollectResume(ctx context.Context, logger *zap.SugaredLogger, prev *Snapsho
 	}
 	vols = addPathRoots(vols, disks, existingPathRoots(root))
 	vols = rememberSizes(vols, prev)
-	long := map[string]bool{}
-	for _, v := range vols {
-		if v.Mountpoint != "" && (v.SizeState == "timeout" || v.SizeState == "unreadable") {
-			long[filepath.Clean(v.Mountpoint)] = true
+	work := map[string]SizeNode{}
+	if prev != nil {
+		for k, v := range prev.SizeWork {
+			work[k] = v
 		}
 	}
-	vols, _, probeReasons := probeSizes(ctx, vols, DuBudget(os.Getenv("GOXIO_DU_BUDGET")), 0, func(c context.Context, path string) (int64, error) {
-		timeout := 2 * time.Second
-		if long[filepath.Clean(path)] {
-			timeout = 8 * time.Second
-		}
-		return duBytes(c, root, path, timeout)
-	})
-	reasons = append(reasons, probeReasons...)
+	vols, work, _ = advanceSizes(ctx, vols, work, DuBudget(os.Getenv("GOXIO_DU_BUDGET")), hostWalker{root: root})
 
 	snap := buildSnapshot(host, time.Now(), disks, vols, ctrs)
+	snap.SizeWork = work
 	snap.PartialReasons = append(snap.PartialReasons, append(notes, reasons...)...)
 	snap.Partial = len(snap.PartialReasons) > 0
 	snap.Complete = !snap.Partial

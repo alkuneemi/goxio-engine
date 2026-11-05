@@ -337,11 +337,11 @@ func finalize(s Snapshot) Snapshot {
 	if s.TruncatedCount > 0 {
 		s.PartialReasons = append(s.PartialReasons, fmt.Sprintf("inspect incomplete: %d of %d containers", s.TruncatedCount, s.ListedContainers))
 	}
-	if s.SizesPending > 0 || s.SizesTimeout > 0 || s.SizesUnreadable > 0 {
-		s.PartialReasons = append(s.PartialReasons, fmt.Sprintf("sizes measured=%d pending=%d timeout=%d unreadable=%d", s.SizesMeasured, s.SizesPending, s.SizesTimeout, s.SizesUnreadable))
+	if s.SizesPending > 0 || s.SizesTimeout > 0 || s.SizesUnreadable > 0 || s.SizesPartial > 0 {
+		s.PartialReasons = append(s.PartialReasons, fmt.Sprintf("sizes measured=%d pending=%d partial=%d timeout=%d unreadable=%d", s.SizesMeasured, s.SizesPending, s.SizesPartial, s.SizesTimeout, s.SizesUnreadable))
 	}
 	s.Partial = len(s.PartialReasons) > 0
-	s.Complete = s.ListingComplete && s.SizesPending == 0 && s.SizesTimeout == 0 && s.SizesUnreadable == 0
+	s.Complete = s.ListingComplete && s.SizesPending == 0 && s.SizesPartial == 0 && s.SizesTimeout == 0 && s.SizesUnreadable == 0
 	return s
 }
 
@@ -362,6 +362,7 @@ func FillInventory(s Snapshot) Snapshot {
 	s.SizesPending = 0
 	s.SizesTimeout = 0
 	s.SizesUnreadable = 0
+	s.SizesPartial = 0
 	for _, n := range s.Nodes {
 		kind, _ := n.Metadata["kind"].(string)
 		switch n.Type {
@@ -400,13 +401,15 @@ func FillInventory(s Snapshot) Snapshot {
 			s.SizesTimeout++
 		case "unreadable":
 			s.SizesUnreadable++
+		case "partial":
+			s.SizesPartial++
 		case "pending", "unknown":
 			if countsAsMissingSize(n) {
 				s.SizesPending++
 			}
 		}
 	}
-	s.MissingSizeCount = s.SizesPending + s.SizesTimeout + s.SizesUnreadable
+	s.MissingSizeCount = s.SizesPending + s.SizesTimeout + s.SizesUnreadable + s.SizesPartial
 	s.ListingComplete = s.TruncatedCount == 0
 	s.Complete = s.ListingComplete && s.MissingSizeCount == 0
 	if !s.Complete {
@@ -426,6 +429,9 @@ func sizeStateOf(n nodes.Node) string {
 // MergeSizeProgress keeps a measured size when a newer snapshot lists the same
 // node but did not measure it again. Membership follows the newer snapshot.
 func MergeSizeProgress(prev, next Snapshot) Snapshot {
+	if len(next.SizeWork) == 0 && len(prev.SizeWork) > 0 {
+		next.SizeWork = prev.SizeWork
+	}
 	if len(prev.Nodes) == 0 {
 		return next
 	}

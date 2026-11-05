@@ -125,6 +125,7 @@ type Meta struct {
 	SizesPending     int    `json:"sizes_pending"`
 	SizesTimeout     int    `json:"sizes_timeout"`
 	SizesUnreadable  int    `json:"sizes_unreadable"`
+	SizesPartial     int    `json:"sizes_partial"`
 	ListingComplete  bool   `json:"listing_complete"`
 }
 
@@ -523,6 +524,7 @@ func metaFrom(snap space.Snapshot) Meta {
 		SizesPending:     snap.SizesPending,
 		SizesTimeout:     snap.SizesTimeout,
 		SizesUnreadable:  snap.SizesUnreadable,
+		SizesPartial:     snap.SizesPartial,
 		ListingComplete:  snap.ListingComplete,
 	}
 }

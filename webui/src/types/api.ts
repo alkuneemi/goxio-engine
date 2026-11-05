@@ -44,6 +44,7 @@ export interface SpaceSummary {
   sizes_pending?: number;
   sizes_timeout?: number;
   sizes_unreadable?: number;
+  sizes_partial?: number;
   listing_complete?: boolean;
 }
 
