@@ -1,0 +1,143 @@
+import { useEffect, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { api, setPortalSession } from '../../api';
+import type { PortalServer } from '../../types';
+import styles from './PortalGate.module.css';
+
+interface PortalGateProps {
+  children: ReactNode;
+}
+
+export default function PortalGate({ children }: PortalGateProps) {
+  const queryClient = useQueryClient();
+  const [phase, setPhase] = useState<'checking' | 'login' | 'servers' | 'pending' | 'map'>('checking');
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [csrf, setCsrf] = useState('');
+  const [servers, setServers] = useState<PortalServer[]>([]);
+  const [current, setCurrent] = useState<PortalServer | null>(null);
+  const [pendingNote, setPendingNote] = useState('');
+
+  const loadServers = async (token: string) => {
+    setPortalSession('', token);
+    const res = await api.servers();
+    setServers(res.data ?? []);
+    setPhase('servers');
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    api.me().then(res => {
+      if (cancelled) return;
+      setCsrf(res.data.csrf);
+      return loadServers(res.data.csrf);
+    }).catch(() => {
+      if (!cancelled) setPhase('login');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const res = await api.login(login.trim(), password);
+      setPassword('');
+      setCsrf(res.data.csrf);
+      await loadServers(res.data.csrf);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign-in failed');
+    }
+  };
+
+  const openServer = (srv: PortalServer) => {
+    setCurrent(srv);
+    if (srv.status !== 'ready') {
+      setPortalSession('', csrf);
+      setPhase('pending');
+      return;
+    }
+    setPortalSession(srv.id, csrf);
+    setPhase('map');
+  };
+
+  const refresh = async () => {
+    if (!current) return;
+    setError('');
+    try {
+      setPortalSession(current.id, csrf);
+      await api.requestRefresh(current.id);
+      setPendingNote('Receipt recorded. The map stays empty until this server’s collector posts a snapshot. GoXIO did not connect to the host.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refresh failed');
+    }
+  };
+
+  const signOut = async () => {
+    try { await api.logout(); } catch { /* cookie cleared locally */ }
+    setPortalSession('', '');
+    queryClient.clear();
+    setCurrent(null);
+    setServers([]);
+    setPhase('login');
+  };
+
+  if (phase === 'checking') {
+    return <p className={styles.center}>Checking session…</p>;
+  }
+
+  if (phase === 'login') {
+    return (
+      <form className={styles.card} onSubmit={submit}>
+        <h1><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
+        <p>Sign in to your servers. This login is the GoXIO portal, separate from any other product.</p>
+        <label>Login<input value={login} onChange={e => setLogin(e.target.value)} autoComplete="username" required /></label>
+        <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
+        {error && <p className={styles.err}>{error}</p>}
+        <button type="submit">Sign in</button>
+      </form>
+    );
+  }
+
+  if (phase === 'servers' || phase === 'pending') {
+    return (
+      <div className={styles.card}>
+        <h1><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
+        <p>Your servers only. An empty server stays pending — no demo map and no other account’s inventory.</p>
+        {servers.length === 0 && <p>No servers are assigned to this account yet.</p>}
+        <ul className={styles.list}>
+          {servers.map(srv => (
+            <li key={srv.id}>
+              <button type="button" onClick={() => openServer(srv)}>
+                <strong>{srv.name}</strong>
+                <span>{srv.address}</span>
+                <span>{srv.status}{srv.partial ? ' · partial' : ''}{srv.complete ? '' : srv.status === 'ready' ? ' · incomplete' : ''}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {phase === 'pending' && current && (
+          <div className={styles.pending}>
+            <h2>{current.name} is pending</h2>
+            <p>{current.detail || 'Map is being prepared. No inventory has been received for this server.'}</p>
+            <p>خريطتك تتجهز</p>
+            {pendingNote && <p>{pendingNote}</p>}
+            {error && <p className={styles.err}>{error}</p>}
+            <button type="button" onClick={refresh}>Request refresh</button>
+          </div>
+        )}
+        <button type="button" className={styles.link} onClick={signOut}>Sign out</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.shell}>
+      <button type="button" className={styles.switch} onClick={() => { setPortalSession('', csrf); setPhase('servers'); }}>
+        Servers
+      </button>
+      {children}
+    </div>
+  );
+}

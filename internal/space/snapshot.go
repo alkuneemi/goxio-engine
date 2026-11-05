@@ -27,13 +27,20 @@ const (
 
 // Snapshot is one read-only view of a server's space hierarchy.
 type Snapshot struct {
-	CollectedAt time.Time    `json:"collected_at"`
-	Host        string       `json:"host"`
-	Source      string       `json:"source"`
-	HostWrites  bool         `json:"host_writes"`
-	Detail      string       `json:"detail,omitempty"`
-	Nodes       []nodes.Node `json:"nodes"`
-	Edges       []edges.Edge `json:"edges"`
+	CollectedAt         time.Time    `json:"collected_at"`
+	Host                string       `json:"host"`
+	Source              string       `json:"source"`
+	HostWrites          bool         `json:"host_writes"`
+	Detail              string       `json:"detail,omitempty"`
+	Partial             bool         `json:"partial"`
+	PartialReasons      []string     `json:"partial_reasons,omitempty"`
+	Complete            bool         `json:"complete"`
+	MissingSizeCount    int          `json:"missing_size_count"`
+	TruncatedCount      int          `json:"truncated_count"`
+	ListedContainers    int          `json:"listed_containers"`
+	InspectedContainers int          `json:"inspected_containers"`
+	Nodes               []nodes.Node `json:"nodes"`
+	Edges               []edges.Edge `json:"edges"`
 }
 
 // HasSpace reports whether the snapshot found a disk, volume, or container.

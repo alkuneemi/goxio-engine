@@ -211,8 +211,8 @@ func TestIngestMasksSecrets(t *testing.T) {
 	if strings.Contains(path, "supersecret") {
 		t.Fatalf("path leaked secret: %s", path)
 	}
-	if n.Metadata["password"] != "***" {
-		t.Fatalf("password = %v", n.Metadata["password"])
+	if _, ok := n.Metadata["password"]; ok {
+		t.Fatalf("password key leaked: %v", n.Metadata["password"])
 	}
 	if n.Metadata["host_writes"] != false {
 		t.Fatal("ingest must force host_writes false")

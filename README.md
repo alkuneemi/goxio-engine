@@ -49,19 +49,18 @@ go run ./cmd/app demo
 Open **http://localhost:8080**. The header shows **GoXIO** and a **Source** link
 back to this repository (AGPL corresponding-source offer).
 
-The space map (disk → volume → container → database → repo → GitHub account)
-is included. Use the **Cards** and **Map** switch, then open a node for size,
-path, repo, account, pressure, and confirm-gated delete / archive / transfer.
-Those actions are recorded only — the process does not write to the host.
+The space map (disk → volume/folder → container → database → repo → GitHub account)
+is behind the GoXIO portal. Each account sees only its own servers. A server
+with no snapshot stays **pending** — not the demo map, and not the disks of
+the machine running the process. Delete, archive, and transfer record intent
+only; they do not write to a host.
 
 ```bash
-# scripted hierarchy, no Docker required
-make run-space-demo
-
-# UI dev server (proxies /api to :8080) in another terminal
+make run-backend
 make run-frontend
 ```
 
+Provisioning (no passwords in git): [`docs/GOXIO-PORTAL.md`](docs/GOXIO-PORTAL.md).
 Run notes: [`docs/GOXIO-RUN.md`](docs/GOXIO-RUN.md).
 
 ## Production on Omxio hosts

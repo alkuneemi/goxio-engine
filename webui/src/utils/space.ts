@@ -24,9 +24,15 @@ export function formatBytes(value: unknown): string {
 }
 
 export function nodeSizeLabel(node: GraphNode): string {
+  const state = node.metadata?.size_state;
+  if (state === 'unreadable') return 'size unreadable';
+  if (state === 'timeout') return 'size timed out';
+  if (state === 'pending') return 'size pending';
+  if (state === 'not-aggregated') return 'mounts listed separately';
   const human = node.metadata?.size;
   if (typeof human === 'string' && human.trim()) return human;
-  return formatBytes(node.metadata?.size_bytes);
+  const bytes = formatBytes(node.metadata?.size_bytes);
+  return bytes || (state === 'unknown' ? 'size unknown' : '');
 }
 
 export function nodeActivity(node: GraphNode): SpaceActivity | '' {

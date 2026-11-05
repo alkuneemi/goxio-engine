@@ -9,40 +9,48 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/guilherme-grimm/graph-go/internal/graph"
+	"github.com/guilherme-grimm/graph-go/internal/portal"
 	"github.com/guilherme-grimm/graph-go/internal/space"
 )
 
-func (s *Server) currentGraph() (*graph.Graph, error) {
-	g, err := s.registry.DiscoverAll()
-	if err != nil {
-		return nil, err
-	}
-	if s.space == nil {
-		return g, nil
-	}
-	return s.space.Merge(g), nil
-}
-
 func (s *Server) spaceSummaryHandler(w http.ResponseWriter, r *http.Request) {
-	if s.space == nil {
-		http.Error(w, "space map unavailable", http.StatusNotFound)
+	sess, ok := s.requireSession(w, r)
+	if !ok {
 		return
 	}
-	writeData(w, s.logger, s.space.Summary())
+	srv, ok := s.requireServer(w, r, sess)
+	if !ok {
+		return
+	}
+	_, meta, err := s.portal.Graph(sess.AccountID, srv.ID)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, "not found")
+		return
+	}
+	writeData(w, s.logger, meta)
 }
 
 func (s *Server) spaceActionsHandler(w http.ResponseWriter, r *http.Request) {
-	if s.space == nil {
-		http.Error(w, "space map unavailable", http.StatusNotFound)
+	sess, ok := s.requireSession(w, r)
+	if !ok {
 		return
 	}
-	writeData(w, s.logger, s.space.Actions())
+	if _, ok := s.requireServer(w, r, sess); !ok {
+		return
+	}
+	writeData(w, s.logger, []any{})
 }
 
 func (s *Server) spaceActionHandler(w http.ResponseWriter, r *http.Request) {
-	if s.space == nil {
-		http.Error(w, "space map unavailable", http.StatusNotFound)
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireCSRF(w, r, sess) {
+		return
+	}
+	srv, ok := s.requireServer(w, r, sess)
+	if !ok {
 		return
 	}
 	var req space.ActionRequest
@@ -51,9 +59,18 @@ func (s *Server) spaceActionHandler(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid action json")
 		return
 	}
-	rec, err := s.space.Apply(req)
+	rec, err := s.portal.Apply(sess.AccountID, srv.ID, req)
 	if err != nil {
-		writeSpaceError(w, err)
+		var se *space.StatusError
+		if errors.As(err, &se) {
+			writeAPIError(w, se.Code, se.Msg)
+			return
+		}
+		if errors.Is(err, portal.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeAPIError(w, http.StatusBadRequest, "request rejected")
 		return
 	}
 	s.logger.Infow("space action recorded", "action", rec.Action, "node", rec.NodeID, "applied_to_host", rec.AppliedToHost)
@@ -61,8 +78,8 @@ func (s *Server) spaceActionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) spaceIngestHandler(w http.ResponseWriter, r *http.Request) {
-	if s.space == nil {
-		http.Error(w, "space map unavailable", http.StatusNotFound)
+	if s.portal == nil {
+		writeAPIError(w, http.StatusUnauthorized, "sign-in required")
 		return
 	}
 	token := r.Header.Get("X-Goxio-Token")
@@ -73,11 +90,21 @@ func (s *Server) spaceIngestHandler(w http.ResponseWriter, r *http.Request) {
 			token = ""
 		}
 	}
-	if err := s.space.Ingest(r.Body, token); err != nil {
-		writeSpaceError(w, err)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid snapshot json")
 		return
 	}
-	writeData(w, s.logger, s.space.Summary())
+	meta, err := s.portal.Ingest(token, body)
+	if err != nil {
+		if errors.Is(err, portal.ErrToken) {
+			writeAPIError(w, http.StatusUnauthorized, "invalid ingest token")
+			return
+		}
+		writeAPIError(w, http.StatusBadRequest, "invalid snapshot json")
+		return
+	}
+	writeData(w, s.logger, meta)
 }
 
 func writeSpaceError(w http.ResponseWriter, err error) {

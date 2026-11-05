@@ -21,7 +21,10 @@ type diskObs struct {
 type volumeObs struct {
 	Name       string
 	Mountpoint string
+	Kind       string
 	SizeBytes  int64
+	SizeState  string // measured, unreadable, timeout, pending, skipped, unknown
+	SizeReason string
 }
 
 type mountObs struct {
@@ -32,15 +35,16 @@ type mountObs struct {
 }
 
 type containerObs struct {
-	ID        string
-	Name      string
-	Image     string
-	Status    string
-	StartedAt time.Time
-	Labels    map[string]string
-	Mounts    []mountObs
-	DBName    string
-	SizeBytes int64
+	ID           string
+	Name         string
+	Image        string
+	Status       string
+	StartedAt    time.Time
+	Labels       map[string]string
+	Mounts       []mountObs
+	DBName       string
+	SizeBytes    int64
+	InspectState string // full, partial, unreadable
 }
 
 type diskMount struct {
@@ -53,6 +57,8 @@ type volRec struct {
 	name       string
 	path       string
 	size       int64
+	sizeState  string
+	sizeReason string
 	kind       string
 	parent     string
 	containers []string
@@ -67,34 +73,79 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 	b := &builder{}
 
 	var mounts []diskMount
+	groups := map[string]string{}
+	ensureGroup := func(device string) string {
+		group := deviceGroup(device)
+		if group == "" {
+			group = "unknown"
+		}
+		if id, ok := groups[group]; ok {
+			return id
+		}
+		id := spaceID("disk-group", group)
+		groups[group] = id
+		md := map[string]any{
+			"kind":          "device-group",
+			"device_group":  group,
+			"cleanable":     false,
+			"unused":        false,
+			"size_state":    "not-aggregated",
+			"accounting":    "mounts-are-separate",
+			"physical_disk": false,
+		}
+		b.addNode(newNode(id, string(nodes.TypeDisk), group, "", "unknown", sourceHost, host, md))
+		return id
+	}
+	seenMount := map[string]bool{}
 	for _, d := range disks {
 		if d.Mount == "" {
 			continue
 		}
+		key := d.Filesystem + "\x00" + d.Mount
+		if seenMount[key] {
+			continue
+		}
+		seenMount[key] = true
 		id := spaceID("disk", d.Filesystem+"-"+d.Mount)
+		parent := ""
+		if d.Filesystem != "" {
+			parent = ensureGroup(d.Filesystem)
+		}
 		pressure := 0.0
 		known := d.Size > 0
 		if known {
 			pressure = float64(d.Used) / float64(d.Size)
 		}
+		group := deviceGroup(d.Filesystem)
 		md := map[string]any{
-			"path":      d.Mount,
-			"fs_type":   d.FSType,
-			"cleanable": false,
-			"unused":    false,
+			"path":         d.Mount,
+			"kind":         "mount",
+			"device_group": group,
+			"fs_type":      d.FSType,
+			"cleanable":    false,
+			"unused":       false,
+			"size_state":   "unknown",
+			"accounting":   "filesystem",
 		}
 		putStr(md, "filesystem", d.Filesystem)
-		putSize(md, d.Size)
+		putStr(md, "device", d.Filesystem)
+		if known {
+			md["size_state"] = "measured"
+			putSize(md, d.Size)
+		}
 		if d.Used > 0 {
 			md["used_bytes"] = d.Used
 		}
 		putFloat(md, "disk_pressure", pressure, known)
-		b.addNode(newNode(id, string(nodes.TypeDisk), diskName(d), "", healthFromPressure(pressure, known), sourceHost, host, md))
+		b.addNode(newNode(id, string(nodes.TypeDisk), diskName(d), parent, healthFromPressure(pressure, known), sourceHost, host, md))
+		if parent != "" {
+			b.addEdge(newEdge(parent, id, edges.TypeContains, "CONTAINS"))
+		}
 		mounts = append(mounts, diskMount{id: id, mount: d.Mount})
 	}
 
 	vols := map[string]*volRec{}
-	ensureVol := func(name, path, kind string, size int64) *volRec {
+	ensureVol := func(name, path, kind string, size int64, state, reason string) *volRec {
 		key := name
 		if key == "" {
 			key = path
@@ -103,11 +154,23 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 			return nil
 		}
 		if v, ok := vols[key]; ok {
-			if size > v.size {
+			if state == "measured" && size > v.size {
 				v.size = size
+				v.sizeState = "measured"
+				v.sizeReason = reason
+			}
+			if v.sizeState == "" && state != "" {
+				v.sizeState = state
+				v.sizeReason = reason
+				if size > v.size {
+					v.size = size
+				}
 			}
 			if v.path == "" {
 				v.path = path
+			}
+			if v.kind == "" || v.kind == "folder" && kind != "" && kind != "folder" {
+				v.kind = kind
 			}
 			return v
 		}
@@ -115,24 +178,36 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		if display == "" {
 			display = path
 		}
+		if state == "" {
+			if size > 0 {
+				state = "measured"
+			} else {
+				state = "unknown"
+			}
+		}
 		v := &volRec{
-			id:     spaceID("volume", key),
-			name:   display,
-			path:   path,
-			size:   size,
-			kind:   kind,
-			parent: diskFor(mounts, path),
+			id:         spaceID("volume", key),
+			name:       display,
+			path:       path,
+			size:       size,
+			sizeState:  state,
+			sizeReason: reason,
+			kind:       kind,
+			parent:     diskFor(mounts, path),
 		}
 		vols[key] = v
 		return v
 	}
 
 	for _, v := range volList {
-		kind := "volume"
-		if v.Name == "" {
-			kind = "folder"
+		kind := v.Kind
+		if kind == "" {
+			kind = "volume"
+			if v.Name == "" {
+				kind = "folder"
+			}
 		}
-		ensureVol(v.Name, v.Mountpoint, kind, v.SizeBytes)
+		ensureVol(v.Name, v.Mountpoint, kind, v.SizeBytes, v.SizeState, v.SizeReason)
 	}
 
 	type ctrBuilt struct {
@@ -154,6 +229,7 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		engine   string
 		dbName   string
 		dbCore   bool
+		inspect  string
 	}
 	var built []ctrBuilt
 	repoSeen := map[string]struct {
@@ -196,9 +272,9 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 			}
 			var v *volRec
 			if kind == "volume" || m.Name != "" {
-				v = ensureVol(m.Name, m.Source, "volume", 0)
+				v = ensureVol(m.Name, m.Source, "volume", 0, "", "")
 			} else if m.Source != "" {
-				v = ensureVol("", m.Source, "folder", 0)
+				v = ensureVol("", m.Source, "folder", 0, "", "")
 			}
 			if v == nil {
 				continue
@@ -223,8 +299,11 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		}
 
 		owner, repo, override := repoFromLabels(labels)
-		if override != "" {
+		if override != "" && repo != "" {
 			owner = override
+		}
+		if repo == "" {
+			owner = ""
 		}
 		repoID, repoName := "", ""
 		if repo != "" && owner != "" {
@@ -251,14 +330,12 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		if dbName == "" {
 			dbName = labelGet(labels, "goxio.database")
 		}
-		if dbName == "" && engine != "" {
-			dbName = name
-		}
 		built = append(built, ctrBuilt{
 			id: id, name: name, activity: activity, core: core, clean: clean, unused: unused,
 			health: containerHealth(st), repoID: repoID, repoName: repoName, account: owner,
 			volIDs: volIDs, parent: parent, size: size, path: path, image: c.Image,
 			engine: engine, dbName: dbName, dbCore: core || isTemplateDB(dbName),
+			inspect: c.InspectState,
 		})
 	}
 
@@ -292,15 +369,28 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 				unused = false
 			}
 		}
+		state := v.sizeState
+		if state == "" {
+			if v.size > 0 {
+				state = "measured"
+			} else {
+				state = "unknown"
+			}
+		}
 		md := map[string]any{
-			"kind":       v.kind,
-			"cleanable":  clean,
-			"unused":     unused,
-			"activity":   activity,
-			"containers": v.containers,
+			"kind":            v.kind,
+			"cleanable":       clean,
+			"unused":          unused,
+			"activity":        activity,
+			"containers":      v.containers,
+			"size_state":      state,
+			"overlaps_parent": true,
 		}
 		putStr(md, "path", v.path)
-		putSize(md, v.size)
+		putStr(md, "size_reason", v.sizeReason)
+		if state == "measured" {
+			putSize(md, v.size)
+		}
 		b.addNode(newNode(v.id, string(nodes.TypeVolume), v.name, v.parent, health, sourceHost, host, md))
 		if v.parent != "" {
 			b.addEdge(newEdge(v.parent, v.id, edges.TypeContains, "CONTAINS"))
@@ -308,18 +398,26 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 	}
 
 	for _, c := range built {
+		provenance := "unknown"
+		if c.repoID != "" {
+			provenance = "label"
+		}
 		md := map[string]any{
 			"activity":   c.activity,
 			"cleanable":  c.clean,
 			"unused":     c.unused,
 			"core":       c.core,
 			"containers": []string{c.name},
+			"provenance": provenance,
 		}
 		putStr(md, "path", c.path)
 		putStr(md, "image", c.image)
+		putStr(md, "inspect_state", c.inspect)
 		putStr(md, "repo", c.repoID)
 		putStr(md, "repo_name", c.repoName)
-		putStr(md, "github_account", c.account)
+		if c.repoID != "" {
+			putStr(md, "github_account", c.account)
+		}
 		putStr(md, "engine", c.engine)
 		putSize(md, c.size)
 		b.addNode(newNode(c.id, string(nodes.TypeContainer), c.name, c.parent, c.health, sourceHost, host, md))
@@ -393,14 +491,14 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		b.addNode(newNode(id, string(nodes.TypeGitHubAccount), login, "", "healthy", sourceHost, host, md))
 	}
 
-	return Snapshot{
+	return finalize(Snapshot{
 		CollectedAt: now.UTC(),
 		Host:        host,
 		Source:      sourceHost,
 		HostWrites:  false,
 		Nodes:       b.nodes,
 		Edges:       b.edges,
-	}
+	})
 }
 
 type builder struct {

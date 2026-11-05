@@ -30,14 +30,30 @@ func Collect(ctx context.Context, logger *zap.SugaredLogger) (Snapshot, error) {
 		logger.Infow("space collector: df failed", "err", derr)
 	}
 
-	vols, ctrs, xerr := readDocker(ctx, logger)
+	root := strings.TrimSpace(os.Getenv("GOXIO_HOST_ROOT"))
+	for i := range disks {
+		disks[i].Mount = RewriteHostRoot(disks[i].Mount, root)
+	}
+	vols, ctrs, reasons, xerr := readDocker(ctx, logger)
 	if xerr != nil {
 		notes = append(notes, "docker: "+xerr.Error())
 		logger.Infow("space collector: docker unavailable", "err", xerr)
 	}
-	vols = fillSizes(ctx, vols)
+	for i := range vols {
+		if vols[i].Mountpoint != "" {
+			vols[i].Mountpoint = RewriteHostRoot(vols[i].Mountpoint, root)
+		}
+	}
+	vols = addPathRoots(vols, disks, existingPathRoots(root))
+	vols, _, probeReasons := probeSizes(ctx, vols, DuBudget(os.Getenv("GOXIO_DU_BUDGET")), 0, func(c context.Context, path string) (int64, error) {
+		return duBytes(c, root, path)
+	})
+	reasons = append(reasons, probeReasons...)
 
 	snap := buildSnapshot(host, time.Now(), disks, vols, ctrs)
+	snap.PartialReasons = append(snap.PartialReasons, append(notes, reasons...)...)
+	snap.Partial = len(snap.PartialReasons) > 0
+	snap.Complete = !snap.Partial
 	if len(notes) > 0 {
 		snap.Detail = strings.Join(notes, "; ")
 	}
@@ -45,6 +61,66 @@ func Collect(ctx context.Context, logger *zap.SugaredLogger) (Snapshot, error) {
 		return snap, errString(snap.Detail)
 	}
 	return snap, nil
+}
+
+func addPathRoots(vols []volumeObs, disks []diskObs, roots []volumeObs) []volumeObs {
+	mounts := map[string]bool{}
+	for _, d := range disks {
+		if d.Mount != "" {
+			mounts[filepath.Clean(d.Mount)] = true
+		}
+	}
+	have := map[string]bool{}
+	for _, v := range vols {
+		if v.Mountpoint != "" {
+			have[filepath.Clean(v.Mountpoint)] = true
+		}
+	}
+	for _, r := range roots {
+		p := filepath.Clean(r.Mountpoint)
+		if p == "" || mounts[p] || have[p] {
+			continue
+		}
+		vols = append(vols, r)
+		have[p] = true
+	}
+	return vols
+}
+
+func existingPathRoots(hostRoot string) []volumeObs {
+	var out []volumeObs
+	for _, p := range PathRoots() {
+		target := p
+		if hostRoot != "" && hostRoot != "/" && hostRoot != "." {
+			target = filepath.Join(hostRoot, strings.TrimPrefix(p, "/"))
+		}
+		fi, err := os.Stat(target)
+		if err != nil || !fi.IsDir() {
+			continue
+		}
+		out = append(out, volumeObs{Mountpoint: p, Kind: pathKind(p), SizeState: "pending"})
+	}
+	return out
+}
+
+func duBytes(ctx context.Context, hostRoot, hostPath string) (int64, error) {
+	target := hostPath
+	if hostRoot != "" && hostRoot != "/" && hostRoot != "." {
+		if hostPath == "/" {
+			target = hostRoot
+		} else {
+			target = filepath.Join(hostRoot, strings.TrimPrefix(hostPath, "/"))
+		}
+	}
+	out, err := runCmd(ctx, 2*time.Second, "du", "-sx", "-B1", target)
+	if err != nil {
+		return 0, err
+	}
+	sz, ok := parseDu(string(out))
+	if !ok {
+		return 0, errString("du unreadable")
+	}
+	return sz, nil
 }
 
 type errString string
@@ -57,49 +133,6 @@ func readDisks(ctx context.Context) ([]diskObs, error) {
 		return nil, err
 	}
 	return parseDF(string(out)), nil
-}
-
-func fillSizes(ctx context.Context, vols []volumeObs) []volumeObs {
-	n := 0
-	seen := map[string]bool{}
-	for i := range vols {
-		if vols[i].SizeBytes > 0 {
-			continue
-		}
-		path := vols[i].Mountpoint
-		if path == "" || seen[path] || !allowDu(path) {
-			continue
-		}
-		if n >= 20 || ctx.Err() != nil {
-			break
-		}
-		seen[path] = true
-		n++
-		out, err := runCmd(ctx, 2*time.Second, "du", "-sx", "-B1", path)
-		if err != nil {
-			continue
-		}
-		if sz, ok := parseDu(string(out)); ok {
-			vols[i].SizeBytes = sz
-		}
-	}
-	return vols
-}
-
-func allowDu(path string) bool {
-	path = filepath.Clean(path)
-	if path == "" || !filepath.IsAbs(path) || strings.ContainsRune(path, 0) {
-		return false
-	}
-	switch path {
-	case "/", "/var", "/usr", "/home", "/opt", "/tmp", "/root":
-		return false
-	}
-	// Require /a/b/c so a top-level directory is not walked.
-	if strings.Count(strings.Trim(path, "/"), "/") < 2 {
-		return false
-	}
-	return true
 }
 
 func runCmd(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {

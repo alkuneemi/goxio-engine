@@ -279,6 +279,11 @@ function SpaceFacts({
         <Fact k="Cleanable" v={node.metadata.cleanable === true ? 'Yes' : 'No'} />
         <Fact k="Unused" v={node.metadata.unused === true ? 'Yes' : 'No'} />
         <Fact k="Server" v={server || '—'} />
+        <Fact k="Provenance" v={typeof node.metadata.provenance === 'string' ? node.metadata.provenance : '—'} />
+        <Fact k="Size state" v={typeof node.metadata.size_state === 'string' ? node.metadata.size_state : '—'} />
+        <Fact k="Device group" v={typeof node.metadata.device_group === 'string' ? node.metadata.device_group : '—'} />
+        {node.metadata.overlaps_parent === true && <Fact k="Accounting" v="Included in the parent filesystem, not a second copy" />}
+        {typeof node.metadata.inspect_state === 'string' && <Fact k="Inspect" v={node.metadata.inspect_state} />}
         {state && <Fact k="State" v={state} />}
         <div className={styles.metaItem}>
           <dt className={styles.metaKey}>Containers</dt>

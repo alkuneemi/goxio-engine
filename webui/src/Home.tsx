@@ -1,5 +1,10 @@
 import { Layout } from './components';
+import PortalGate from './components/portal/PortalGate';
 
 export default function Home() {
-  return <Layout />;
+  return (
+    <PortalGate>
+      <Layout />
+    </PortalGate>
+  );
 }

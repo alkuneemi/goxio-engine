@@ -10,64 +10,85 @@ import (
 	"go.uber.org/zap"
 )
 
-const maxDockerInspect = 60
-
 // readDocker lists containers and volumes through the Docker API (DOCKER_HOST,
 // which should be a read-only socket proxy in production). It never calls a
 // write endpoint. A missing daemon is an error the caller can ignore.
-func readDocker(ctx context.Context, logger *zap.SugaredLogger) ([]volumeObs, []containerObs, error) {
+func readDocker(ctx context.Context, logger *zap.SugaredLogger) ([]volumeObs, []containerObs, []string, error) {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer cli.Close()
 	if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
+	var reasons []string
 	list, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var vols []volumeObs
 	if vres, verr := cli.VolumeList(ctx, client.VolumeListOptions{}); verr != nil {
 		logger.Infow("space collector: volume list skipped", "err", verr)
+		reasons = append(reasons, "volumes unreadable")
 	} else {
 		for _, v := range vres.Items {
-			obs := volumeObs{Name: v.Name, Mountpoint: v.Mountpoint}
+			obs := volumeObs{Name: v.Name, Mountpoint: v.Mountpoint, Kind: "volume", SizeState: "pending"}
 			if v.UsageData != nil && v.UsageData.Size > 0 {
 				obs.SizeBytes = v.UsageData.Size
+				obs.SizeState = "measured"
+				obs.SizeReason = "docker"
 			}
 			vols = append(vols, obs)
 		}
 	}
 
-	var ctrs []containerObs
-	for i, ctr := range list.Items {
-		if ctx.Err() != nil {
-			break
+	listed := make([]containerObs, 0, len(list.Items))
+	for _, ctr := range list.Items {
+		listed = append(listed, containerFromSummary(ctr))
+	}
+	ctrs, inspectReasons := enrichContainers(ctx, listed, func(ctx context.Context, info containerObs) (containerObs, error) {
+		ins, ierr := cli.ContainerInspect(ctx, info.ID, client.ContainerInspectOptions{})
+		if ierr != nil {
+			return info, ierr
 		}
-		info := containerFromSummary(ctr)
-		if i < maxDockerInspect {
-			ins, ierr := cli.ContainerInspect(ctx, ctr.ID, client.ContainerInspectOptions{})
-			if ierr != nil {
-				logger.Debugw("space collector: inspect skipped", "container", info.Name, "err", ierr)
-			} else {
-				applyInspect(&info, ins.Container)
-			}
-		}
+		applyInspect(&info, ins.Container)
+		info.InspectState = "full"
+		return info, nil
+	})
+	reasons = append(reasons, inspectReasons...)
+	for _, info := range ctrs {
 		for _, m := range info.Mounts {
 			if strings.EqualFold(m.Kind, "bind") && m.Source != "" {
-				vols = append(vols, volumeObs{Mountpoint: m.Source})
+				vols = append(vols, volumeObs{Mountpoint: m.Source, Kind: "folder", SizeState: "pending"})
 			}
 		}
-		ctrs = append(ctrs, info)
 	}
-	return vols, ctrs, nil
+
+	if imgs, ierr := cli.ImageList(ctx, client.ImageListOptions{}); ierr != nil {
+		logger.Infow("space collector: image list skipped", "err", ierr)
+		reasons = append(reasons, "images unreadable")
+	} else {
+		for _, img := range imgs.Items {
+			name := shortID(img.ID)
+			if len(img.RepoTags) > 0 && img.RepoTags[0] != "" && img.RepoTags[0] != "<none>:<none>" {
+				name = img.RepoTags[0]
+			}
+			obs := volumeObs{Name: name, Kind: "image", SizeState: "unknown"}
+			if img.Size > 0 {
+				obs.SizeBytes = img.Size
+				obs.SizeState = "measured"
+				obs.SizeReason = "docker"
+			}
+			vols = append(vols, obs)
+		}
+	}
+	return vols, ctrs, reasons, nil
 }
 
 func containerFromSummary(ctr container.Summary) containerObs {

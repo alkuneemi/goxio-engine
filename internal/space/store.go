@@ -540,14 +540,21 @@ func rejectTarget(v string) string {
 	return ""
 }
 
-var allowedTypes = map[string]bool{
-	string(nodes.TypeDisk):          true,
-	string(nodes.TypeVolume):        true,
-	string(nodes.TypeContainer):     true,
-	string(nodes.TypeDatabase):      true,
-	string(nodes.TypeRepo):          true,
-	string(nodes.TypeGitHubAccount): true,
+func allowedNodeType(t string) bool {
+	if t == "" || len(t) > 40 {
+		return false
+	}
+	for _, r := range t {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
 }
+
+// Sanitize returns a copy safe to store and show: host writes forced off,
+// secret-like metadata removed, sensitive paths redacted.
+func Sanitize(snap Snapshot) Snapshot { return sanitize(snap) }
 
 func sanitize(snap Snapshot) Snapshot {
 	snap.HostWrites = false
@@ -556,16 +563,11 @@ func sanitize(snap Snapshot) Snapshot {
 	var kept []nodes.Node
 	seen := map[string]bool{}
 	for _, n := range snap.Nodes {
-		if !allowedTypes[n.Type] || n.Id == "" || seen[n.Id] {
+		if !allowedNodeType(n.Type) || n.Id == "" || seen[n.Id] || strings.Contains(n.Id, "..") || strings.ContainsAny(n.Id, "/\\") {
 			continue
 		}
 		seen[n.Id] = true
-		n.Name = redact.String(n.Name)
-		if n.Metadata == nil {
-			n.Metadata = map[string]any{}
-		}
-		n.Metadata = redact.Map(n.Metadata)
-		n.Metadata["host_writes"] = false
+		n = scrubNode(n)
 		if _, ok := n.Metadata["collector"]; !ok && snap.Source != "" {
 			n.Metadata["collector"] = snap.Source
 		}

@@ -43,10 +43,10 @@ run-backend:
 	@echo "Starting backend server on port 8080..."
 	@go run ./cmd/app serve
 
-## run-space-demo: Serve the built-in disk→GitHub demo map (no host writes)
+## run-space-demo: Serve the API locally. Maps still require a portal account.
 run-space-demo:
-	@echo "GoXIO space demo on http://localhost:8080  (GOXIO_SPACE_SOURCE=demo)"
-	@GOXIO_SPACE_SOURCE=demo go run ./cmd/app serve
+	@echo "GoXIO on http://localhost:8080 — create an account with: goxio portal account create"
+	@GOXIO_COOKIE_SECURE=0 go run ./cmd/app serve
 
 ## watch-backend: Run backend with air hot-reload (installs air if missing)
 watch-backend:

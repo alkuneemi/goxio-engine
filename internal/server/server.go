@@ -15,7 +15,7 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
-	"github.com/guilherme-grimm/graph-go/internal/space"
+	"github.com/guilherme-grimm/graph-go/internal/portal"
 )
 
 type Server struct {
@@ -23,7 +23,7 @@ type Server struct {
 	allowedOrigins []string
 	registry       adapters.Registry
 	logger         *zap.SugaredLogger
-	space          *space.Store
+	portal         *portal.Store
 }
 
 // NewServer returns the HTTP server and a cleanup function that should
@@ -69,21 +69,27 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 
 	watchCancel := startWatchers(discoverers, svcSync, logger)
 
-	spaceStore := space.NewStore(logger)
-	spaceStore.SetIngestToken(os.Getenv("GOXIO_INGEST_TOKEN"))
-	spaceMode := space.ModeFromEnv()
-	bootCtx, bootCancel := context.WithTimeout(context.Background(), 8*time.Second)
-	spaceStore.Bootstrap(bootCtx, spaceMode)
-	bootCancel()
-	refreshCtx, refreshCancel := context.WithCancel(context.Background())
-	go spaceStore.Loop(refreshCtx, spaceMode)
+	// Tenant maps come only from ingested snapshots. The process does not
+	// scan this host into a customer view, and it does not fall back to the
+	// demo snapshot when a tenant has no inventory.
+	dataDir := os.Getenv("GOXIO_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "data/portal"
+	}
+	portalStore, err := portal.Open(dataDir, portal.Options{
+		SecureCookies: os.Getenv("GOXIO_COOKIE_SECURE") != "0",
+		TrustProxy:    os.Getenv("GOXIO_TRUST_PROXY") == "1",
+	})
+	if err != nil {
+		logger.Errorw("portal store unavailable; map routes will refuse", "err", err)
+	}
 
 	s := &Server{
 		port:           port,
 		allowedOrigins: allowedOrigins,
 		registry:       reg,
 		logger:         logger,
-		space:          spaceStore,
+		portal:         portalStore,
 	}
 
 	server := &http.Server{
@@ -95,7 +101,6 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 	}
 
 	cleanup := func() {
-		refreshCancel()
 		watchCancel()
 		regCleanup()
 	}

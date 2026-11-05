@@ -9,14 +9,30 @@ export type GraphResponse = ApiResponse<Graph>;
 
 export type NodeResponse = ApiResponse<GraphNode>;
 
+export interface PortalServer {
+  id: string;
+  name: string;
+  address: string;
+  status: string;
+  partial: boolean;
+  complete: boolean;
+  detail?: string;
+}
+
 export interface SpaceSummary {
-  source: string;
+  source?: string;
+  status?: string;
   host: string;
   collected_at: string;
   host_writes: boolean;
   detail?: string;
-  node_count: number;
-  edge_count: number;
+  node_count?: number;
+  edge_count?: number;
+  partial?: boolean;
+  complete?: boolean;
+  missing_size_count?: number;
+  truncated_count?: number;
+  listed_containers?: number;
 }
 
 export interface SpaceActionRequest {

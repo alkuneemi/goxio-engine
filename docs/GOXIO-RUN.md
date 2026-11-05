@@ -1,5 +1,8 @@
 # GoXIO run notes
 
+Portal sign-in, tenant snapshots, backup, and rollback: [`GOXIO-PORTAL.md`](GOXIO-PORTAL.md).
+Maps are not public. `GOXIO_SPACE_SOURCE=demo` is no longer served on the HTTP API.
+
 The space map is disk → volume/folder → container → database → repo → GitHub account.
 Cards drill that chain. Map is the existing force-directed graph (switch layouts in the header).
 Click a node for path, size, containers, repo, GitHub account, activity, cleanable, and pressure when the collector has it.

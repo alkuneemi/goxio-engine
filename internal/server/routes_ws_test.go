@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/graph"
 	"github.com/guilherme-grimm/graph-go/internal/graph/health"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
+	"github.com/guilherme-grimm/graph-go/internal/space"
 )
 
 // dialTestWebSocket creates an httptest server from s.RegisterRoutes(),
@@ -21,10 +23,32 @@ import (
 // function that closes everything.
 func dialTestWebSocket(t *testing.T, s *Server) (*websocket.Conn, func()) {
 	t.Helper()
+	reg, _ := s.registry.(*mockRegistry)
+	g := &graph.Graph{}
+	var metrics []health.HealthMetrics
+	if reg != nil && reg.graph != nil {
+		g = reg.graph
+		metrics = reg.health
+	}
+	baked := NodeHealths(g, metrics)
+	nodes := append([]nodes.Node{}, g.Nodes...)
+	for i := range nodes {
+		if h, ok := baked[nodes[i].Id]; ok {
+			nodes[i].Health = h
+		}
+		if nodes[i].Type == "" {
+			nodes[i].Type = "service"
+		}
+	}
+	cookie, serverID := seedPortal(t, s, "tenant-a", "password-tenant-a", space.Snapshot{
+		Source: "ingest", Host: "tenant-a", Nodes: nodes, Edges: g.Edges,
+	})
 	srv := httptest.NewServer(s.RegisterRoutes())
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/websocket"
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/websocket?server=" + serverID
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Cookie": []string{cookie.Name + "=" + cookie.Value}},
+	})
 	if err != nil {
 		cancel()
 		srv.Close()

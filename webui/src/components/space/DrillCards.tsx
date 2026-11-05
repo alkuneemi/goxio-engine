@@ -1,5 +1,5 @@
 import type { Graph, GraphNode } from '../../types';
-import { LEVEL_LABEL, isSpaceNode, nodeActivity, nodeSizeLabel, pressureValue, spaceChildren } from '../../utils';
+import { LEVEL_LABEL, nodeActivity, nodeSizeLabel, pressureValue, spaceChildren } from '../../utils';
 import styles from './DrillCards.module.css';
 
 interface DrillCardsProps {
@@ -46,9 +46,9 @@ export default function DrillCards({ graph, stack, onStack, onSelect }: DrillCar
         <p className={styles.empty}>Waiting for the map.</p>
       ) : items.length === 0 ? (
         <p className={styles.empty}>
-          {graph.nodes.some(isSpaceNode)
-            ? 'Nothing at this level. Pick another disk, or clear the space filters.'
-            : 'No disks in this snapshot. Run with GOXIO_SPACE_SOURCE=demo, or point the read-only collector at a host.'}
+          {current
+            ? 'Nothing else under this node. Its details stay in the side panel — a missing repo or database does not remove it.'
+            : 'No disks in this server’s snapshot yet.'}
         </p>
       ) : (
         <ul className={styles.grid}>

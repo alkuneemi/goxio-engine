@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from './client';
+import { api, portalServerId } from './client';
 import type { Graph, HealthUpdatePayload } from '../types';
 
 // Query keys for cache management
@@ -11,8 +11,10 @@ export const queryKeys = {
 };
 
 export function useGraph() {
+  const serverId = portalServerId();
   return useQuery({
-    queryKey: queryKeys.graph,
+    queryKey: [...queryKeys.graph, serverId],
+    enabled: !!serverId,
     queryFn: async () => {
       const response = await api.getGraph();
       return response.data;
@@ -25,8 +27,10 @@ export function useGraph() {
 }
 
 export function useSpaceSummary() {
+  const serverId = portalServerId();
   return useQuery({
-    queryKey: ['space-summary'] as const,
+    queryKey: ['space-summary', serverId] as const,
+    enabled: !!serverId,
     queryFn: async () => (await api.getSpace()).data,
     staleTime: 15_000,
     refetchInterval: 60_000,

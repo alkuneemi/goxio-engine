@@ -1,7 +1,7 @@
-import type { Graph, SpaceActivity } from '../../types';
+import type { Graph, SpaceActivity, SpaceSummary } from '../../types';
 import type { Filters } from '../../utils';
 import { SPACE_ACTIVITIES, hasSpaceFilter, isSpaceNode } from '../../utils';
-import type { SpaceSummary } from '../../types';
+import { api } from '../../api';
 import styles from './SpaceBar.module.css';
 
 export type MapView = 'cards' | 'map';
@@ -95,9 +95,16 @@ export default function SpaceBar({ graph, summary, filters, onFilterChange, view
 
       <span className={styles.source}>
         {summary
-          ? `${summary.source || 'space'} · ${summary.host || 'host'} · read-only`
-          : 'read-only collector'}
+          ? `${summary.status || summary.source || 'space'} · ${summary.host || 'server'} · read-only${summary.partial || summary.complete === false ? ' · partial' : ''}${summary.truncated_count ? ` · ${summary.truncated_count} inspect incomplete` : ''}${summary.missing_size_count ? ` · ${summary.missing_size_count} sizes missing` : ''}`
+          : 'read-only'}
       </span>
+      <button
+        type="button"
+        className={styles.clear}
+        onClick={() => { void api.logout().then(() => window.location.assign('/')); }}
+      >
+        Sign out
+      </button>
     </div>
   );
 }

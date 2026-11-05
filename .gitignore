@@ -1,6 +1,8 @@
 config.yaml
 .env
 *.db
+/data/
+*.ingest.token
 
 # Dependencies
 node_modules/

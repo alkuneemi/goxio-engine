@@ -1,4 +1,4 @@
-export { api, ApiError } from './client';
+export { api, ApiError, setPortalSession, portalServerId } from './client';
 export {
   useGraph,
   useNode,
