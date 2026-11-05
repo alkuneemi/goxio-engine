@@ -95,7 +95,7 @@ export default function SpaceBar({ graph, summary, filters, onFilterChange, view
 
       <span className={styles.source}>
         {summary
-          ? `${summary.status || summary.source || 'space'} · ${summary.host || 'server'} · read-only${summary.partial || summary.complete === false ? ' · partial' : ''}${summary.truncated_count ? ` · ${summary.truncated_count} inspect incomplete` : ''}${summary.missing_size_count ? ` · ${summary.missing_size_count} sizes missing` : ''}`
+          ? `${summary.status || summary.source || 'space'} · ${summary.host || 'server'} · read-only${summary.listing_complete === false ? ' · inspect incomplete' : ''}${typeof summary.volumes === 'number' ? ` · ${summary.volumes} volumes` : ''}${typeof summary.images === 'number' ? ` · ${summary.images} images` : ''}${typeof summary.folders === 'number' ? ` · ${summary.folders} folders` : ''}${summary.sizes_timeout ? ` · ${summary.sizes_timeout} size timeouts` : ''}${summary.sizes_pending ? ` · ${summary.sizes_pending} sizes pending` : ''}${summary.sizes_unreadable ? ` · ${summary.sizes_unreadable} unreadable` : ''}`
           : 'read-only'}
       </span>
       <button

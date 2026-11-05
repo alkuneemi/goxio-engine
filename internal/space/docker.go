@@ -76,10 +76,17 @@ func readDocker(ctx context.Context, logger *zap.SugaredLogger) ([]volumeObs, []
 	} else {
 		for _, img := range imgs.Items {
 			name := shortID(img.ID)
-			if len(img.RepoTags) > 0 && img.RepoTags[0] != "" && img.RepoTags[0] != "<none>:<none>" {
-				name = img.RepoTags[0]
+			var tags []string
+			for _, tag := range img.RepoTags {
+				if tag == "" || tag == "<none>:<none>" {
+					continue
+				}
+				tags = append(tags, tag)
 			}
-			obs := volumeObs{Name: name, Kind: "image", SizeState: "unknown"}
+			if len(tags) > 0 {
+				name = tags[0]
+			}
+			obs := volumeObs{Name: name, Kind: "image", Digest: img.ID, Tags: tags, SizeState: "unknown"}
 			if img.Size > 0 {
 				obs.SizeBytes = img.Size
 				obs.SizeState = "measured"

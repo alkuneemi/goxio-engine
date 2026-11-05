@@ -33,6 +33,18 @@ export interface SpaceSummary {
   missing_size_count?: number;
   truncated_count?: number;
   listed_containers?: number;
+  volumes?: number;
+  images?: number;
+  folders?: number;
+  mounts?: number;
+  databases?: number;
+  repos?: number;
+  accounts?: number;
+  sizes_measured?: number;
+  sizes_pending?: number;
+  sizes_timeout?: number;
+  sizes_unreadable?: number;
+  listing_complete?: boolean;
 }
 
 export interface SpaceActionRequest {

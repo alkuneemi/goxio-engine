@@ -22,7 +22,13 @@ unset GOXIO_PORTAL_PASSWORD
 goxio portal server add --login sahabify --name sahabify --address 187.127.114.87 \
   > /root/sahabify.ingest.token
 chmod 600 /root/sahabify.ingest.token
+
+# Optional email sign-in for the same account. This does not create a second tenant.
+# Dots and +tags are not folded, so look-alike addresses stay different people.
+goxio portal account alias --login sahabify --alias sahabify@gmail.com
 ```
+
+A server added while `goxio serve` is already running is accepted on the next ingest. The process re-reads token files when the token is unknown. A restart is not required. `Sahabify@Gmail.com` signs in as `sahabify@gmail.com`. `saha.bify@gmail.com` does not.
 
 `187.127.114.87` is the remote server for the sahabify account. It is not the Omxio KSA host. Do not point this server record at the machine that serves `goxio.sa.omxio.com`.
 
@@ -32,7 +38,8 @@ On the remote host (or a container whose mount namespace is that host), collect 
 export GOXIO_HOST_ROOT=/host-disk   # only if df shows that collector mount
 export GOXIO_DU_BUDGET=40           # probes per pass; unfinished paths stay pending or timeout
 goxio collect -o /tmp/snapshot.json
-# re-run collect later to retry paths still pending; timeouts stay visible, they are not deleted
+# later pass: keep measured sizes, retry timeouts (8s) and pending paths
+goxio collect --resume /tmp/snapshot.json -o /tmp/snapshot.json
 curl -fsS -X POST https://goxio.example/api/space/ingest \
   -H "Authorization: Bearer $(cat /root/sahabify.ingest.token)" \
   -H 'content-type: application/json' \
@@ -63,10 +70,15 @@ Mutating browser calls send `X-GoXIO-Request: 1` and `X-CSRF-Token` from `GET /a
 
 `/health` stays unauthenticated and returns `{"status":"ok"}` for the process probe. It has no tenant data. `/api/health` requires a session and a server id.
 
+`curl` against `/websocket` with HTTP/2 and no WebSocket upgrade can return **426**. That is the handshake refusing a normal HTTP request. It is not a failed login. Browsers and a WebSocket client send the upgrade on HTTP/1.1; the session cookie is checked, and a revoked session closes the socket on the next tick (about 5 seconds).
+
+`goxio scan` / `goxio export` and `goxio mcp` are operator CLIs. They are not portal routes and they are not given a tenant session. The map API does not merge their local discovery into a customer graph.
+
 ## What the map will and will not claim
 
 - Every listed container is kept. Inspect that stops early is `inspect_state: partial` and `truncated_count` on the summary. There is no silent cap at 60.
-- Volume and folder sizes that `du` cannot finish are `timeout`, `unreadable`, or `pending`. `missing_size_count` is the tally. `complete` is false in that case.
+- `/api/space` counts volumes, images, folders, and mounts separately. An image is not a volume. Two tags of one digest are one image. A bind of a volume mountpoint is not a second volume.
+- Volume and folder sizes that `du` cannot finish are `timeout`, `unreadable`, or `pending`, each with its own count. `missing_size_count` is their sum. `complete` stays false while any of those remain. `listing_complete` can still be true when every container was inspected. `goxio collect --resume snapshot.json` keeps sizes already measured and retries the rest (`GOXIO_DU_WORKERS` defaults to 2, capped at 4). A timed-out path is retried at 8s. The HTTP request that receives a snapshot does not run `du`.
 - `df` rows are filesystem mounts. Partitions such as `sda1`, `sda15`, and `sda16` share a device-group node and are not added together into a fake disk total. A mapper device stays its own group.
 - Images and generic path roots (`/var`, `/var/lib`, `/var/lib/containerd`, `/opt`, `/root`, `/usr`, and similar) are nodes when the collector can see them. A timed-out `du` still leaves the node.
 - Database nodes are created only from database-name environment variables or `goxio.database`. Repo and GitHub nodes are created only from explicit GitHub labels. Other containers stay on the map with `provenance: unknown`.
@@ -104,7 +116,9 @@ This is not a claim that the portal is fully secure.
 - One process and one data directory. Sessions and snapshots are files. A second replica needs that directory shared, and the login rate limit is still per process.
 - No second factor, no self-service password reset, no email. An operator resets a password by creating a new account or replacing the hash out of band.
 - The engine will not pull a map over SSH. If the collector on the remote host does not post, the server stays pending.
-- `goxio scan` and `goxio mcp` still describe the engine host’s own Docker or Kubernetes discovery. They are operator tools, not the tenant API. Server stderr from discovery can name local containers.
+- `goxio scan` and `goxio mcp` still describe the engine host’s own Docker or Kubernetes discovery when an operator runs them on that host. They are not served to portal users. Server stderr from discovery can still name local containers.
+- A size that times out is reported and is not counted as measured. `complete` stays false until those paths are measured or the tree is small enough for `du` to finish. Raising `GOXIO_DU_TIMEOUT` is not a switch; the retry path uses 8s. Huge directories can remain `timeout` on every pass.
+- There is no MFA. A long password and the portal session are the demo bar.
 - A long-lived WebSocket is checked again about every five seconds and then closed if the session was revoked. There is a short window.
 - Cookie `Secure` is correct only when the browser talks HTTPS. Leave `GOXIO_COOKIE_SECURE` at its default in production.
 - Path redaction is a name filter, not a guarantee that every secret path shape is recognized.

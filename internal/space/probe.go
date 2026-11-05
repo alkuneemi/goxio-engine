@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
@@ -130,6 +132,7 @@ func probeSizes(ctx context.Context, vols []volumeObs, budget, cursor int, run f
 	}
 	attempts := 0
 	var reasons []string
+	var jobs []sizeJob
 	seen := 0
 	i := cursor
 	for seen < n && (budget == 0 || attempts < budget) {
@@ -160,24 +163,9 @@ func probeSizes(ctx context.Context, vols []volumeObs, budget, cursor int, run f
 			continue
 		}
 		attempts++
-		sz, err := run(ctx, path)
-		if err != nil {
-			if isTimeout(err) {
-				v.SizeState = "timeout"
-				v.SizeReason = "timeout"
-			} else {
-				v.SizeState = "unreadable"
-				v.SizeReason = "unreadable"
-			}
-			v.SizeBytes = 0
-			out[idx] = v
-			continue
-		}
-		v.SizeBytes = sz
-		v.SizeState = "measured"
-		v.SizeReason = "du"
-		out[idx] = v
+		jobs = append(jobs, sizeJob{idx: idx, path: path})
 	}
+	runSizeJobs(ctx, out, jobs, run)
 	pending := 0
 	bad := 0
 	for _, v := range out {
@@ -198,6 +186,83 @@ func probeSizes(ctx context.Context, vols []volumeObs, budget, cursor int, run f
 	}
 	next := i
 	return out, next, reasons
+}
+
+type sizeJob struct {
+	idx  int
+	path string
+}
+
+func runSizeJobs(ctx context.Context, out []volumeObs, jobs []sizeJob, run func(context.Context, string) (int64, error)) {
+	if len(jobs) == 0 {
+		return
+	}
+	workers := duWorkers()
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+	ch := make(chan sizeJob)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range ch {
+				if ctx.Err() != nil {
+					continue
+				}
+				sz, err := run(ctx, job.path)
+				mu.Lock()
+				v := out[job.idx]
+				if err != nil {
+					if isTimeout(err) {
+						v.SizeState = "timeout"
+						v.SizeReason = "timeout"
+					} else {
+						v.SizeState = "unreadable"
+						v.SizeReason = "unreadable"
+					}
+					v.SizeBytes = 0
+				} else {
+					v.SizeBytes = sz
+					v.SizeState = "measured"
+					v.SizeReason = "du"
+				}
+				out[job.idx] = v
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, job := range jobs {
+		if ctx.Err() != nil {
+			break
+		}
+		ch <- job
+	}
+	close(ch)
+	wg.Wait()
+}
+
+func duWorkers() int {
+	raw := strings.TrimSpace(os.Getenv("GOXIO_DU_WORKERS"))
+	if raw == "" {
+		return 2
+	}
+	n := 0
+	for _, r := range raw {
+		if r < '0' || r > '9' {
+			return 2
+		}
+		n = n*10 + int(r-'0')
+	}
+	if n < 1 {
+		return 1
+	}
+	if n > 4 {
+		return 4
+	}
+	return n
 }
 
 func needsSize(v volumeObs) bool {
@@ -268,39 +333,122 @@ func pathKind(path string) string {
 
 func finalize(s Snapshot) Snapshot {
 	s = scrubSnapshot(s)
-	missing := 0
-	partialInspect := 0
-	listed := 0
-	inspected := 0
-	for _, n := range s.Nodes {
-		if n.Type == string(nodes.TypeContainer) {
-			listed++
-			st, _ := n.Metadata["inspect_state"].(string)
-			switch st {
-			case "partial", "unreadable":
-				partialInspect++
-			default:
-				inspected++
-			}
-		}
-		if !countsAsMissingSize(n) {
-			continue
-		}
-		missing++
+	s = FillInventory(s)
+	if s.TruncatedCount > 0 {
+		s.PartialReasons = append(s.PartialReasons, fmt.Sprintf("inspect incomplete: %d of %d containers", s.TruncatedCount, s.ListedContainers))
 	}
-	s.ListedContainers = listed
-	s.InspectedContainers = inspected
-	s.TruncatedCount = partialInspect
-	s.MissingSizeCount = missing
-	if partialInspect > 0 {
-		s.PartialReasons = append(s.PartialReasons, fmt.Sprintf("inspect incomplete: %d of %d containers", partialInspect, listed))
-	}
-	if missing > 0 {
-		s.PartialReasons = append(s.PartialReasons, fmt.Sprintf("missing sizes: %d", missing))
+	if s.SizesPending > 0 || s.SizesTimeout > 0 || s.SizesUnreadable > 0 {
+		s.PartialReasons = append(s.PartialReasons, fmt.Sprintf("sizes measured=%d pending=%d timeout=%d unreadable=%d", s.SizesMeasured, s.SizesPending, s.SizesTimeout, s.SizesUnreadable))
 	}
 	s.Partial = len(s.PartialReasons) > 0
-	s.Complete = !s.Partial && partialInspect == 0
+	s.Complete = s.ListingComplete && s.SizesPending == 0 && s.SizesTimeout == 0 && s.SizesUnreadable == 0
 	return s
+}
+
+// FillInventory counts nodes by what they are. Images are not volumes.
+// A timeout is not a silent gap: it is counted on its own.
+func FillInventory(s Snapshot) Snapshot {
+	s.ListedContainers = 0
+	s.InspectedContainers = 0
+	s.TruncatedCount = 0
+	s.Volumes = 0
+	s.Images = 0
+	s.Folders = 0
+	s.Mounts = 0
+	s.Databases = 0
+	s.Repos = 0
+	s.Accounts = 0
+	s.SizesMeasured = 0
+	s.SizesPending = 0
+	s.SizesTimeout = 0
+	s.SizesUnreadable = 0
+	for _, n := range s.Nodes {
+		kind, _ := n.Metadata["kind"].(string)
+		switch n.Type {
+		case string(nodes.TypeContainer):
+			s.ListedContainers++
+			st, _ := n.Metadata["inspect_state"].(string)
+			if st == "partial" || st == "unreadable" {
+				s.TruncatedCount++
+			} else {
+				s.InspectedContainers++
+			}
+		case string(nodes.TypeDatabase):
+			s.Databases++
+		case string(nodes.TypeRepo):
+			s.Repos++
+		case string(nodes.TypeGitHubAccount):
+			s.Accounts++
+		case string(nodes.TypeDisk):
+			if kind == "mount" {
+				s.Mounts++
+			}
+		case string(nodes.TypeVolume):
+			switch kind {
+			case "image":
+				s.Images++
+			case "folder", "log", "backup", "runtime":
+				s.Folders++
+			default:
+				s.Volumes++
+			}
+		}
+		switch sizeStateOf(n) {
+		case "measured":
+			s.SizesMeasured++
+		case "timeout":
+			s.SizesTimeout++
+		case "unreadable":
+			s.SizesUnreadable++
+		case "pending", "unknown":
+			if countsAsMissingSize(n) {
+				s.SizesPending++
+			}
+		}
+	}
+	s.MissingSizeCount = s.SizesPending + s.SizesTimeout + s.SizesUnreadable
+	s.ListingComplete = s.TruncatedCount == 0
+	s.Complete = s.ListingComplete && s.MissingSizeCount == 0
+	if !s.Complete {
+		s.Partial = true
+	}
+	return s
+}
+
+func sizeStateOf(n nodes.Node) string {
+	if n.Metadata == nil {
+		return ""
+	}
+	st, _ := n.Metadata["size_state"].(string)
+	return st
+}
+
+// MergeSizeProgress keeps a measured size when a newer snapshot lists the same
+// node but did not measure it again. Membership follows the newer snapshot.
+func MergeSizeProgress(prev, next Snapshot) Snapshot {
+	if len(prev.Nodes) == 0 {
+		return next
+	}
+	old := make(map[string]nodes.Node, len(prev.Nodes))
+	for _, n := range prev.Nodes {
+		old[n.Id] = n
+	}
+	for i, n := range next.Nodes {
+		was, ok := old[n.Id]
+		if !ok || sizeStateOf(was) != "measured" || sizeStateOf(n) == "measured" {
+			continue
+		}
+		if n.Metadata == nil {
+			n.Metadata = map[string]any{}
+		}
+		for _, k := range []string{"size", "size_bytes", "used_bytes", "size_state", "size_reason"} {
+			if v, ok := was.Metadata[k]; ok {
+				n.Metadata[k] = v
+			}
+		}
+		next.Nodes[i] = n
+	}
+	return FillInventory(next)
 }
 
 func countsAsMissingSize(n nodes.Node) bool {

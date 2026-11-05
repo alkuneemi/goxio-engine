@@ -22,6 +22,8 @@ type volumeObs struct {
 	Name       string
 	Mountpoint string
 	Kind       string
+	Digest     string
+	Tags       []string
 	SizeBytes  int64
 	SizeState  string // measured, unreadable, timeout, pending, skipped, unknown
 	SizeReason string
@@ -60,6 +62,8 @@ type volRec struct {
 	sizeState  string
 	sizeReason string
 	kind       string
+	digest     string
+	tags       []string
 	parent     string
 	containers []string
 }
@@ -145,69 +149,95 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 	}
 
 	vols := map[string]*volRec{}
-	ensureVol := func(name, path, kind string, size int64, state, reason string) *volRec {
-		key := name
-		if key == "" {
-			key = path
+	ensureVol := func(in volumeObs) *volRec {
+		kind := in.Kind
+		if kind == "" {
+			kind = "volume"
+			if in.Name == "" {
+				kind = "folder"
+			}
 		}
-		if key == "" {
+		path := in.Mountpoint
+		if path != "" {
+			path = filepath.Clean(path)
+		}
+		if kind != "volume" && kind != "image" && path != "" {
+			for _, existing := range vols {
+				if existing.path != "" && filepath.Clean(existing.path) == path {
+					return existing
+				}
+			}
+		}
+		material := in.Name
+		idKind := "volume"
+		switch kind {
+		case "image":
+			idKind = "image"
+			if in.Digest != "" {
+				material = in.Digest
+			}
+		case "folder", "log", "backup", "runtime":
+			idKind = "folder"
+			material = path
+		}
+		if material == "" {
+			material = path
+		}
+		if material == "" {
 			return nil
 		}
+		key := idKind + ":" + material
 		if v, ok := vols[key]; ok {
-			if state == "measured" && size > v.size {
-				v.size = size
+			if in.SizeState == "measured" && in.SizeBytes > v.size {
+				v.size = in.SizeBytes
 				v.sizeState = "measured"
-				v.sizeReason = reason
-			}
-			if v.sizeState == "" && state != "" {
-				v.sizeState = state
-				v.sizeReason = reason
-				if size > v.size {
-					v.size = size
-				}
+				v.sizeReason = in.SizeReason
 			}
 			if v.path == "" {
 				v.path = path
 			}
-			if v.kind == "" || v.kind == "folder" && kind != "" && kind != "folder" {
-				v.kind = kind
+			for _, tag := range in.Tags {
+				v.tags = appendUnique(v.tags, tag)
+			}
+			if v.digest == "" {
+				v.digest = in.Digest
 			}
 			return v
 		}
-		display := name
-		if display == "" {
-			display = path
-		}
+		state := in.SizeState
 		if state == "" {
-			if size > 0 {
+			if in.SizeBytes > 0 {
 				state = "measured"
 			} else {
 				state = "unknown"
 			}
 		}
+		display := in.Name
+		if display == "" {
+			display = path
+		}
+		parentPath := path
+		if parentPath == "" {
+			parentPath = "/"
+		}
 		v := &volRec{
-			id:         spaceID("volume", key),
+			id:         spaceID(idKind, material),
 			name:       display,
 			path:       path,
-			size:       size,
+			size:       in.SizeBytes,
 			sizeState:  state,
-			sizeReason: reason,
+			sizeReason: in.SizeReason,
 			kind:       kind,
-			parent:     diskFor(mounts, path),
+			digest:     in.Digest,
+			tags:       append([]string{}, in.Tags...),
+			parent:     diskFor(mounts, parentPath),
 		}
 		vols[key] = v
 		return v
 	}
 
 	for _, v := range volList {
-		kind := v.Kind
-		if kind == "" {
-			kind = "volume"
-			if v.Name == "" {
-				kind = "folder"
-			}
-		}
-		ensureVol(v.Name, v.Mountpoint, kind, v.SizeBytes, v.SizeState, v.SizeReason)
+		ensureVol(v)
 	}
 
 	type ctrBuilt struct {
@@ -272,9 +302,9 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 			}
 			var v *volRec
 			if kind == "volume" || m.Name != "" {
-				v = ensureVol(m.Name, m.Source, "volume", 0, "", "")
+				v = ensureVol(volumeObs{Name: m.Name, Mountpoint: m.Source, Kind: "volume"})
 			} else if m.Source != "" {
-				v = ensureVol("", m.Source, "folder", 0, "", "")
+				v = ensureVol(volumeObs{Mountpoint: m.Source, Kind: "folder"})
 			}
 			if v == nil {
 				continue
@@ -388,6 +418,13 @@ func buildSnapshot(host string, now time.Time, disks []diskObs, volList []volume
 		}
 		putStr(md, "path", v.path)
 		putStr(md, "size_reason", v.sizeReason)
+		putStr(md, "digest", v.digest)
+		if v.kind == "volume" {
+			putStr(md, "volume_name", v.name)
+		}
+		if len(v.tags) > 0 {
+			md["tags"] = append([]string{}, v.tags...)
+		}
 		if state == "measured" {
 			putSize(md, v.size)
 		}

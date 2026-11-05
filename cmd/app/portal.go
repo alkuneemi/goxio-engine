@@ -47,9 +47,30 @@ func newPortalAccountCmd() *cobra.Command {
 			return nil
 		},
 	}
-	create.Flags().String("login", "", "account login")
+	create.Flags().String("login", "", "slug or email address")
 	_ = create.MarkFlagRequired("login")
-	cmd.AddCommand(create)
+	alias := &cobra.Command{
+		Use:   "alias",
+		Short: "Attach an email (or other login) to an existing account without creating a second tenant.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			login, _ := cmd.Flags().GetString("login")
+			alias, _ := cmd.Flags().GetString("alias")
+			p, err := openPortal()
+			if err != nil {
+				return err
+			}
+			if err := p.AddAlias(login, alias); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "alias added for %s\n", login)
+			return nil
+		},
+	}
+	alias.Flags().String("login", "", "existing account login")
+	alias.Flags().String("alias", "", "email or other login to accept")
+	_ = alias.MarkFlagRequired("login")
+	_ = alias.MarkFlagRequired("alias")
+	cmd.AddCommand(create, alias)
 	return cmd
 }
 
@@ -151,12 +172,24 @@ func newPortalSnapshotCmd() *cobra.Command {
 }
 
 func newCollectCmd() *cobra.Command {
-	var outPath string
+	var outPath, resumePath string
 	cmd := &cobra.Command{
 		Use:   "collect",
 		Short: "Read-only local collect to a snapshot file. Does not attach it to a tenant.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			snap, err := space.Collect(cmd.Context(), nil)
+			var prev *space.Snapshot
+			if resumePath != "" {
+				b, err := os.ReadFile(resumePath)
+				if err != nil {
+					return err
+				}
+				var old space.Snapshot
+				if err := json.Unmarshal(b, &old); err != nil {
+					return fmt.Errorf("resume file is not a snapshot")
+				}
+				prev = &old
+			}
+			snap, err := space.CollectResume(cmd.Context(), nil, prev)
 			if err != nil && len(snap.Nodes) == 0 {
 				return err
 			}
@@ -172,6 +205,7 @@ func newCollectCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "write the snapshot to this file (mode 0600)")
+	cmd.Flags().StringVar(&resumePath, "resume", "", "previous snapshot; keep measured sizes and retry unfinished paths")
 	return cmd
 }
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/guilherme-grimm/graph-go/internal/graph"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
 	"github.com/guilherme-grimm/graph-go/internal/portal"
 	"github.com/guilherme-grimm/graph-go/internal/space"
@@ -356,6 +358,192 @@ func TestTwoTenantIsolation(t *testing.T) {
 	shown = getGraph(aCookie, aSrv.ID)
 	if strings.Contains(shown, "id_ed25519") || strings.Contains(shown, aTok) {
 		t.Fatalf("secret or token visible: %s", shown)
+	}
+}
+
+func TestLoginDoesNotAdoptPlantedCookie(t *testing.T) {
+	s := newTestServer(&mockRegistry{graph: testGraph()})
+	p, err := portal.Open(t.TempDir(), portal.Options{BcryptCost: bcrypt.MinCost, SecureCookies: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.portal = p
+	if _, err := p.CreateAccount("holder", "password-holder-ok"); err != nil {
+		t.Fatal(err)
+	}
+	planted := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	req := httptest.NewRequest(http.MethodPost, "/api/portal/login", strings.NewReader(`{"login":"holder","password":"password-holder-ok"}`))
+	req.Header.Set("X-GoXIO-Request", "1")
+	req.AddCookie(&http.Cookie{Name: "goxio_session", Value: planted})
+	req.RemoteAddr = "198.51.100.40:40"
+	w := httptest.NewRecorder()
+	s.RegisterRoutes().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("login %d %s", w.Code, w.Body.String())
+	}
+	var issued string
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "goxio_session" {
+			issued = c.Value
+		}
+	}
+	if issued == "" || issued == planted {
+		t.Fatalf("session was not rotated: %q", issued)
+	}
+	if _, err := p.LookupSession(planted); err == nil {
+		t.Fatal("planted session became valid")
+	}
+}
+
+func TestActionRequiresCSRF(t *testing.T) {
+	s := newTestServer(&mockRegistry{graph: testGraph()})
+	cookie, serverID := seedPortal(t, s, "actor", "password-actor-ok", space.Snapshot{
+		Source: "ingest", Host: "actor-host",
+		Nodes: []nodes.Node{{
+			Id: "space-volume-keep", Type: "volume", Name: "keep", Health: "healthy",
+			Metadata: map[string]any{"kind": "volume", "cleanable": true, "unused": true},
+		}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/space/actions?server="+serverID, strings.NewReader(`{"node_id":"space-volume-keep","action":"delete","confirm":"DELETE"}`))
+	authed(req, cookie, "")
+	w := httptest.NewRecorder()
+	s.RegisterRoutes().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("missing csrf = %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "pending_delete") {
+		t.Fatal("action applied without csrf")
+	}
+}
+
+func TestPortalDoesNotServeLocalDiscoveryOrCLIRoutes(t *testing.T) {
+	s := newTestServer(&mockRegistry{graph: &graph.Graph{Nodes: []nodes.Node{{
+		Id: "ksa-only", Type: "database", Name: "ksa-only-db", Health: "healthy",
+	}}}})
+	cookie, serverID := seedPortal(t, s, "tenant", "password-tenant-ok", space.Snapshot{
+		Source: "ingest", Host: "tenant-host",
+		Nodes: []nodes.Node{{
+			Id: "space-volume-mine", Type: "volume", Name: "mine-only", Health: "healthy",
+			Metadata: map[string]any{"kind": "volume"},
+		}},
+	})
+	h := s.RegisterRoutes()
+	req := httptest.NewRequest(http.MethodGet, "/api/graph?server="+serverID, nil)
+	authed(req, cookie, "")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "mine-only") || strings.Contains(w.Body.String(), "ksa-only") {
+		t.Fatalf("graph mixed local discovery: %d %s", w.Code, w.Body.String())
+	}
+	for _, path := range []string{"/api/scan", "/api/export", "/api/mcp"} {
+		req = httptest.NewRequest(http.MethodGet, path, nil)
+		authed(req, cookie, "")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if strings.Contains(w.Body.String(), "ksa-only") || strings.Contains(w.Body.String(), "mine-only") {
+			t.Fatalf("%s leaked inventory: %s", path, w.Body.String())
+		}
+	}
+}
+
+func TestWebSocketIsolationAndLogout(t *testing.T) {
+	s := newTestServer(&mockRegistry{graph: testGraph()})
+	p, err := portal.Open(t.TempDir(), portal.Options{BcryptCost: bcrypt.MinCost, SecureCookies: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.portal = p
+	makeSide := func(login, marker string) (*http.Cookie, string) {
+		t.Helper()
+		if _, err := p.CreateAccount(login, "password-"+login+"-ok"); err != nil {
+			t.Fatal(err)
+		}
+		sess, err := p.Authenticate(login, "password-"+login+"-ok")
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv, _, err := p.AddServer(sess.AccountID, login, "203.0.113.10")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.SaveSnapshot(sess.AccountID, srv.ID, space.Snapshot{
+			Source: "ingest", Host: login + "-host",
+			Nodes: []nodes.Node{{
+				Id: "space-volume-" + marker, Type: "volume", Name: marker, Health: "healthy",
+				Metadata: map[string]any{"kind": "volume"},
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/portal/login", strings.NewReader(`{"login":"`+login+`","password":"password-`+login+`-ok"}`))
+		req.Header.Set("X-GoXIO-Request", "1")
+		req.RemoteAddr = "198.51.100.70:70"
+		w := httptest.NewRecorder()
+		s.RegisterRoutes().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("login %s: %d %s", login, w.Code, w.Body.String())
+		}
+		for _, c := range w.Result().Cookies() {
+			if c.Name == "goxio_session" {
+				return c, srv.ID
+			}
+		}
+		t.Fatal("cookie")
+		return nil, ""
+	}
+	aCookie, aServer := makeSide("sidea", "marker-a")
+	_, bServer := makeSide("sideb", "marker-b")
+
+	h := s.RegisterRoutes()
+	plain := httptest.NewRequest(http.MethodGet, "/websocket?server="+aServer, nil)
+	authed(plain, aCookie, "")
+	pw := httptest.NewRecorder()
+	h.ServeHTTP(pw, plain)
+	if strings.Contains(pw.Body.String(), "marker-a") || strings.Contains(pw.Body.String(), "marker-b") || strings.Contains(pw.Body.String(), "pg-test") {
+		t.Fatalf("non-upgrade websocket leaked: %d %s", pw.Code, pw.Body.String())
+	}
+
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	dial := func(cookie *http.Cookie, serverID string) (*websocket.Conn, error) {
+		url := "ws" + strings.TrimPrefix(srv.URL, "http") + "/websocket?server=" + serverID
+		conn, _, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{
+			HTTPHeader: http.Header{"Cookie": []string{cookie.Name + "=" + cookie.Value}},
+		})
+		return conn, err
+	}
+	conn, err := dial(aCookie, aServer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	if _, err := dial(aCookie, bServer); err == nil {
+		t.Fatal("tenant A opened tenant B's websocket")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte("marker-a")) || bytes.Contains(data, []byte("marker-b")) || bytes.Contains(data, []byte("pg-test")) {
+		t.Fatalf("ws payload = %s", data)
+	}
+	token := csrfOf(t, s, aCookie)
+	req := httptest.NewRequest(http.MethodPost, "/api/portal/logout", nil)
+	authed(req, aCookie, token)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("logout %d %s", w.Code, w.Body.String())
+	}
+	ctx2, cancel2 := context.WithTimeout(t.Context(), 7*time.Second)
+	defer cancel2()
+	if _, _, err := conn.Read(ctx2); err == nil {
+		t.Fatal("websocket stayed open after logout")
+	}
+	if _, err := dial(aCookie, aServer); err == nil {
+		t.Fatal("logged-out cookie still opened a websocket")
 	}
 }
 

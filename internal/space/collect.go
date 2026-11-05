@@ -9,12 +9,20 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
 )
 
 // Collect reads disks (df) and, when a Docker API is reachable, containers and
-// volumes. du is used only for specific volume mountpoints, with a short
-// timeout. No command writes to the host.
+// volumes. du is bounded per pass and does not write to the host.
 func Collect(ctx context.Context, logger *zap.SugaredLogger) (Snapshot, error) {
+	return CollectResume(ctx, logger, nil)
+}
+
+// CollectResume repeats Collect and keeps sizes that were already measured in
+// prev. Paths that timed out are tried again with a longer timeout. The HTTP
+// API does not call this; it only stores snapshots a collector posts.
+func CollectResume(ctx context.Context, logger *zap.SugaredLogger, prev *Snapshot) (Snapshot, error) {
 	if logger == nil {
 		logger = zap.NewNop().Sugar()
 	}
@@ -45,8 +53,19 @@ func Collect(ctx context.Context, logger *zap.SugaredLogger) (Snapshot, error) {
 		}
 	}
 	vols = addPathRoots(vols, disks, existingPathRoots(root))
+	vols = rememberSizes(vols, prev)
+	long := map[string]bool{}
+	for _, v := range vols {
+		if v.Mountpoint != "" && (v.SizeState == "timeout" || v.SizeState == "unreadable") {
+			long[filepath.Clean(v.Mountpoint)] = true
+		}
+	}
 	vols, _, probeReasons := probeSizes(ctx, vols, DuBudget(os.Getenv("GOXIO_DU_BUDGET")), 0, func(c context.Context, path string) (int64, error) {
-		return duBytes(c, root, path)
+		timeout := 2 * time.Second
+		if long[filepath.Clean(path)] {
+			timeout = 8 * time.Second
+		}
+		return duBytes(c, root, path, timeout)
 	})
 	reasons = append(reasons, probeReasons...)
 
@@ -103,7 +122,7 @@ func existingPathRoots(hostRoot string) []volumeObs {
 	return out
 }
 
-func duBytes(ctx context.Context, hostRoot, hostPath string) (int64, error) {
+func duBytes(ctx context.Context, hostRoot, hostPath string, timeout time.Duration) (int64, error) {
 	target := hostPath
 	if hostRoot != "" && hostRoot != "/" && hostRoot != "." {
 		if hostPath == "/" {
@@ -112,7 +131,10 @@ func duBytes(ctx context.Context, hostRoot, hostPath string) (int64, error) {
 			target = filepath.Join(hostRoot, strings.TrimPrefix(hostPath, "/"))
 		}
 	}
-	out, err := runCmd(ctx, 2*time.Second, "du", "-sx", "-B1", target)
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	out, err := runCmd(ctx, timeout, "du", "-sx", "-B1", target)
 	if err != nil {
 		return 0, err
 	}
@@ -121,6 +143,80 @@ func duBytes(ctx context.Context, hostRoot, hostPath string) (int64, error) {
 		return 0, errString("du unreadable")
 	}
 	return sz, nil
+}
+
+func rememberSizes(vols []volumeObs, prev *Snapshot) []volumeObs {
+	if prev == nil {
+		return vols
+	}
+	type mem struct {
+		state  string
+		reason string
+		size   int64
+	}
+	readSize := func(n nodes.Node) int64 {
+		switch v := n.Metadata["size_bytes"].(type) {
+		case int64:
+			return v
+		case float64:
+			return int64(v)
+		case int:
+			return int64(v)
+		default:
+			return 0
+		}
+	}
+	byPath := map[string]mem{}
+	byVol := map[string]mem{}
+	byDigest := map[string]mem{}
+	for _, n := range prev.Nodes {
+		if n.Metadata == nil {
+			continue
+		}
+		st := sizeStateOf(n)
+		if st != "measured" && st != "timeout" && st != "unreadable" {
+			continue
+		}
+		m := mem{state: st, reason: st, size: readSize(n)}
+		if p, ok := n.Metadata["path"].(string); ok && p != "" {
+			byPath[filepath.Clean(p)] = m
+		}
+		if n.Metadata["kind"] == "volume" {
+			if name, ok := n.Metadata["volume_name"].(string); ok && name != "" {
+				byVol[name] = m
+			}
+		}
+		if d, ok := n.Metadata["digest"].(string); ok && d != "" {
+			byDigest[d] = m
+		}
+	}
+	for i, v := range vols {
+		var m mem
+		ok := false
+		switch {
+		case v.Kind == "image" && v.Digest != "":
+			m, ok = byDigest[v.Digest]
+		case v.Name != "" && (v.Kind == "volume" || v.Kind == ""):
+			m, ok = byVol[v.Name]
+		}
+		if !ok && v.Mountpoint != "" {
+			m, ok = byPath[filepath.Clean(v.Mountpoint)]
+		}
+		if !ok {
+			continue
+		}
+		if m.state == "measured" && m.size > 0 {
+			vols[i].SizeBytes = m.size
+			vols[i].SizeState = "measured"
+			vols[i].SizeReason = "previous"
+			continue
+		}
+		if vols[i].SizeState == "" || vols[i].SizeState == "pending" || vols[i].SizeState == "unknown" {
+			vols[i].SizeState = m.state
+			vols[i].SizeReason = m.reason
+		}
+	}
+	return vols
 }
 
 type errString string

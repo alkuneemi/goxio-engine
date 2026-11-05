@@ -55,6 +55,7 @@ type Options struct {
 type Account struct {
 	ID           string    `json:"id"`
 	Login        string    `json:"login"`
+	Aliases      []string  `json:"aliases,omitempty"`
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
 }
@@ -113,6 +114,18 @@ type Meta struct {
 	MissingSizeCount int    `json:"missing_size_count"`
 	TruncatedCount   int    `json:"truncated_count"`
 	ListedContainers int    `json:"listed_containers"`
+	Volumes          int    `json:"volumes"`
+	Images           int    `json:"images"`
+	Folders          int    `json:"folders"`
+	Mounts           int    `json:"mounts"`
+	Databases        int    `json:"databases"`
+	Repos            int    `json:"repos"`
+	Accounts         int    `json:"accounts"`
+	SizesMeasured    int    `json:"sizes_measured"`
+	SizesPending     int    `json:"sizes_pending"`
+	SizesTimeout     int    `json:"sizes_timeout"`
+	SizesUnreadable  int    `json:"sizes_unreadable"`
+	ListingComplete  bool   `json:"listing_complete"`
 }
 
 type Store struct {
@@ -180,9 +193,9 @@ func (s *Store) SecureCookies() bool { return s.opt.SecureCookies }
 func (s *Store) TrustProxy() bool    { return s.opt.TrustProxy }
 
 func (s *Store) CreateAccount(login, password string) (Account, error) {
-	login = normalizeLogin(login)
-	if !validLogin(login) {
-		return Account{}, errors.New("login must be 2–32 lowercase letters, digits, dot, underscore or hyphen")
+	login, err := canonicalLogin(login)
+	if err != nil {
+		return Account{}, err
 	}
 	if len(password) < minPassword {
 		return Account{}, errors.New("password must be at least 12 characters")
@@ -206,6 +219,39 @@ func (s *Store) CreateAccount(login, password string) (Account, error) {
 		return Account{}, err
 	}
 	return acct, nil
+}
+
+// AddAlias attaches a second sign-in name to an existing account.
+// Slug and email are not merged unless an operator sets the alias.
+// Dots and +tags in the local part are kept, so they cannot collide by surprise.
+func (s *Store) AddAlias(login, alias string) error {
+	login, err := canonicalLogin(login)
+	if err != nil {
+		return err
+	}
+	alias, err = canonicalLogin(alias)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	acct, err := s.accountByLogin(login)
+	if err != nil {
+		return ErrNotFound
+	}
+	if alias == acct.Login {
+		return nil
+	}
+	if other, err := s.accountByLogin(alias); err == nil && other.ID != acct.ID {
+		return ErrExists
+	}
+	for _, have := range acct.Aliases {
+		if have == alias {
+			return nil
+		}
+	}
+	acct.Aliases = append(acct.Aliases, alias)
+	return writeJSON(filepath.Join(s.dir, "accounts", acct.ID+".json"), acct)
 }
 
 // AddServer records a server owned by accountID and returns a fresh ingest
@@ -247,7 +293,11 @@ func (s *Store) AddServer(accountID, name, address string) (Server, string, erro
 }
 
 func (s *Store) Authenticate(login, password string) (Session, error) {
-	login = normalizeLogin(login)
+	login, err := canonicalLogin(login)
+	if err != nil {
+		_ = bcrypt.CompareHashAndPassword(s.dummy, []byte(password))
+		return Session{}, ErrInvalid
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	acct, err := s.accountByLogin(login)
@@ -365,7 +415,10 @@ func (s *Store) ListServers(accountID string) ([]ServerView, error) {
 
 // FindAccount returns the account record. Callers must not serialize PasswordHash.
 func (s *Store) FindAccount(login string) (Account, error) {
-	login = normalizeLogin(login)
+	login, err := canonicalLogin(login)
+	if err != nil {
+		return Account{}, ErrNotFound
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.accountByLogin(login)
@@ -445,7 +498,12 @@ func (s *Store) Graph(accountID, serverID string) (*graph.Graph, Meta, error) {
 			Detail:   "Map is being prepared. No inventory has been received for this server.",
 		}, nil
 	}
-	return snap.Graph(), Meta{
+	snap = space.FillInventory(snap)
+	return snap.Graph(), metaFrom(snap), nil
+}
+
+func metaFrom(snap space.Snapshot) Meta {
+	return Meta{
 		Status:           "ready",
 		Partial:          snap.Partial,
 		Complete:         snap.Complete,
@@ -454,7 +512,19 @@ func (s *Store) Graph(accountID, serverID string) (*graph.Graph, Meta, error) {
 		MissingSizeCount: snap.MissingSizeCount,
 		TruncatedCount:   snap.TruncatedCount,
 		ListedContainers: snap.ListedContainers,
-	}, nil
+		Volumes:          snap.Volumes,
+		Images:           snap.Images,
+		Folders:          snap.Folders,
+		Mounts:           snap.Mounts,
+		Databases:        snap.Databases,
+		Repos:            snap.Repos,
+		Accounts:         snap.Accounts,
+		SizesMeasured:    snap.SizesMeasured,
+		SizesPending:     snap.SizesPending,
+		SizesTimeout:     snap.SizesTimeout,
+		SizesUnreadable:  snap.SizesUnreadable,
+		ListingComplete:  snap.ListingComplete,
+	}
 }
 
 func (s *Store) Apply(accountID, serverID string, req space.ActionRequest) (space.ActionRecord, error) {
@@ -486,11 +556,12 @@ func (s *Store) Ingest(token string, body []byte) (Meta, error) {
 	if len(body) > maxBody {
 		return Meta{}, errors.New("snapshot too large")
 	}
+	if token == "" {
+		return Meta{}, ErrToken
+	}
 	sum := tokenHash(s.pepper, token)
-	s.mu.Lock()
-	key, ok := s.byHash[sum]
-	s.mu.Unlock()
-	if !ok || token == "" {
+	key, ok := s.resolveToken(sum)
+	if !ok {
 		return Meta{}, ErrToken
 	}
 	var snap space.Snapshot
@@ -498,6 +569,11 @@ func (s *Store) Ingest(token string, body []byte) (Meta, error) {
 		return Meta{}, errors.New("invalid snapshot json")
 	}
 	snap.Source = "ingest"
+	if old, ok, err := s.LoadSnapshot(key.accountID, key.serverID); err != nil {
+		return Meta{}, err
+	} else if ok {
+		snap = space.MergeSizeProgress(old, snap)
+	}
 	if err := s.SaveSnapshot(key.accountID, key.serverID, snap); err != nil {
 		return Meta{}, err
 	}
@@ -579,20 +655,50 @@ func (s *Store) readAccount(id string) (Account, error) {
 }
 
 func (s *Store) accountByLogin(login string) (Account, error) {
+	canon, err := canonicalLogin(login)
+	if err != nil {
+		return Account{}, ErrNotFound
+	}
 	entries, err := os.ReadDir(filepath.Join(s.dir, "accounts"))
 	if err != nil {
 		return Account{}, err
 	}
 	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
 		var acct Account
 		if err := readJSON(filepath.Join(s.dir, "accounts", e.Name()), &acct); err != nil {
 			continue
 		}
-		if acct.Login == login {
+		if acct.Login == canon {
 			return acct, nil
+		}
+		for _, alias := range acct.Aliases {
+			if alias == canon {
+				return acct, nil
+			}
 		}
 	}
 	return Account{}, ErrNotFound
+}
+
+// resolveToken finds the server for an ingest-token hash. A miss re-reads the
+// files so a server created by another process is accepted without a restart.
+func (s *Store) resolveToken(sum string) (serverKey, bool) {
+	if sum == "" {
+		return serverKey{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if key, ok := s.byHash[sum]; ok {
+		return key, true
+	}
+	if err := s.reindex(); err != nil {
+		return serverKey{}, false
+	}
+	key, ok := s.byHash[sum]
+	return key, ok
 }
 
 func (s *Store) reindex() error {
@@ -688,21 +794,65 @@ func readJSON(path string, v any) error {
 	return json.Unmarshal(b, v)
 }
 
-func normalizeLogin(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
+func canonicalLogin(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if strings.Contains(s, "@") {
+		return canonicalEmail(s)
+	}
+	s = strings.ToLower(s)
+	if !validSlug(s) {
+		return "", errors.New("login must be a slug (letters, digits, . _ -) or a plain email address")
+	}
+	return s, nil
 }
 
-func validLogin(s string) bool {
+func validSlug(s string) bool {
 	if len(s) < 2 || len(s) > 32 {
 		return false
 	}
 	for i, r := range s {
 		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
-		if !ok || (i == 0 && (r < 'a' || r > 'z') && (r < '0' || r > '9')) {
+		if !ok || (i == 0 && ((r < 'a' || r > 'z') && (r < '0' || r > '9'))) {
 			return false
 		}
 	}
 	return true
+}
+
+func canonicalEmail(raw string) (string, error) {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if strings.ContainsAny(s, " \t\r\n\"<>(),;\\") || strings.Contains(s, "..") {
+		return "", errors.New("email must be a plain address")
+	}
+	local, domain, ok := strings.Cut(s, "@")
+	if !ok || local == "" || domain == "" || strings.Contains(domain, "@") {
+		return "", errors.New("email must contain one @")
+	}
+	if len(s) > 254 || len(local) > 64 {
+		return "", errors.New("email is too long")
+	}
+	if strings.HasPrefix(local, ".") || strings.HasSuffix(local, ".") {
+		return "", errors.New("email local part is not valid")
+	}
+	for _, r := range s {
+		if r > 127 {
+			return "", errors.New("email must be plain ASCII")
+		}
+	}
+	if !strings.Contains(domain, ".") || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") {
+		return "", errors.New("email domain is not valid")
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return "", errors.New("email domain is not valid")
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return "", errors.New("email domain is not valid")
+			}
+		}
+	}
+	return local + "@" + domain, nil
 }
 
 // SafeID reports whether id can be used as a single path segment we generated.
