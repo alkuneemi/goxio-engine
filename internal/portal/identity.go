@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -27,41 +26,22 @@ func LoginKey(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 
-// cleanCopiedPassword removes paste debris at the ends only.
-// A byte-order mark, zero-width characters, and Unicode spaces at either end
-// are not part of the password. Spaces inside the password stay.
-func cleanCopiedPassword(raw string) string {
-	s := strings.TrimPrefix(raw, "\uFEFF")
-	return strings.TrimFunc(s, func(r rune) bool {
-		return unicode.IsSpace(r) || r == '\u200b' || r == '\u200c' || r == '\u200d' || r == '\ufeff'
-	})
-}
-
-// passwordCandidates is the stored secret, then the same secret without paste
-// debris, when those differ. Internal spaces are never a second candidate.
+// passwordCandidates is the submitted password only. Ends are not removed.
 func passwordCandidates(raw string) []string {
-	if strings.ContainsRune(raw, 0) {
-		return []string{raw}
-	}
-	cleaned := cleanCopiedPassword(raw)
-	if cleaned == "" || cleaned == raw {
-		return []string{raw}
-	}
-	return []string{raw, cleaned}
+	return []string{raw}
 }
 
 func preparePassword(raw string) (string, error) {
 	if strings.ContainsRune(raw, 0) {
 		return "", policy("password contains a null byte")
 	}
-	cleaned := cleanCopiedPassword(raw)
-	if len(cleaned) < minPassword {
+	if len(raw) < minPassword {
 		return "", policy("password must be at least 12 characters")
 	}
-	if len(cleaned) > 72 {
+	if len(raw) > 72 {
 		return "", policy("password must be at most 72 bytes")
 	}
-	return cleaned, nil
+	return raw, nil
 }
 
 func passwordMatches(hash []byte, cands []string) bool {
@@ -146,7 +126,7 @@ func (s *Store) Register(login, password, confirm string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	if cleanCopiedPassword(confirm) != password {
+	if confirm != password {
 		return Session{}, policy("passwords do not match")
 	}
 	if _, err := s.CreateAccount(login, password); err != nil {

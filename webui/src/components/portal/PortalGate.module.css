@@ -33,6 +33,16 @@
 
 .card label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--text-secondary); }
 .hint { font-size: 12px; text-align: start; }
+.secret { display: flex; gap: 8px; align-items: stretch; }
+.secret input { flex: 1; min-width: 0; }
+.card .peek {
+  min-height: 44px;
+  background: transparent;
+  color: #00D4C8;
+  border: 1px solid #00D4C8;
+  white-space: nowrap;
+}
+.warn { color: #fbbf24; font-size: 13px; }
 .help { font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
 .help p, .card > p { text-align: start; }
 .card input {

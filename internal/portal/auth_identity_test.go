@@ -16,7 +16,7 @@ func TestSlugEmailLoginAndPastedPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.CreateAccount("Sahabify", "\ufeffpassword-long-enough\r\n"); err != nil {
+	if _, err := p.CreateAccount("Sahabify", "password-long-enough"); err != nil {
 		t.Fatal(err)
 	}
 	// The address is not an alias yet. Signup must not take it or join the tenant.
@@ -32,7 +32,13 @@ func TestSlugEmailLoginAndPastedPassword(t *testing.T) {
 	if _, err := p.FindAccount("sahabify@gmail.com"); err != ErrNotFound {
 		t.Fatal("wrong password wrote an alias")
 	}
-	sess, err := p.Authenticate("  Sahabify@Gmail.com  ", "password-long-enough\n")
+	if _, err := p.Authenticate("sahabify", "password-long-enough\n"); err != ErrInvalid {
+		t.Fatal("a trailing newline matched the stored password")
+	}
+	if _, err := p.Authenticate("sahabify", "password-long-enough "); err != ErrInvalid {
+		t.Fatal("a trailing space matched the stored password")
+	}
+	sess, err := p.Authenticate("  Sahabify@Gmail.com  ", "password-long-enough")
 	if err != nil {
 		t.Fatalf("email login: %v", err)
 	}

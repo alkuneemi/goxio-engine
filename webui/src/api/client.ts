@@ -23,13 +23,42 @@ function withServer(endpoint: string): string {
 class ApiError extends Error {
   status: number;
   statusText: string;
+  retryAfter: number;
 
-  constructor(message: string, status: number, statusText: string) {
+  constructor(message: string, status: number, statusText: string, retryAfter = 0) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.statusText = statusText;
+    this.retryAfter = retryAfter;
   }
+}
+
+function retryAfterSeconds(response: Response): number {
+  const raw = response.headers.get('Retry-After');
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const when = Date.parse(raw);
+  if (Number.isNaN(when)) return 0;
+  return Math.max(0, Math.ceil((when - Date.now()) / 1000));
+}
+
+export function portalFailure(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) {
+      return 'البريد أو كلمة المرور غير مطابقة. لم تُفتح جلسة. The login or password did not match. No session was opened.';
+    }
+    if (err.status === 429) {
+      const wait = err.retryAfter > 0 ? ` أعد المحاولة بعد ${err.retryAfter} ثانية. Retry after ${err.retryAfter} seconds.` : '';
+      return `محاولات كثيرة. لم تُفتح جلسة.${wait} Too many attempts. No session was opened.`;
+    }
+    if (err.status === 0) {
+      return 'تعذر الاتصال بالخادم. لم تُفتح جلسة. The server could not be reached. No session was opened.';
+    }
+    return err.message;
+  }
+  return 'تعذر الاتصال بالخادم. لم تُفتح جلسة. The server could not be reached. No session was opened.';
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -59,7 +88,7 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     } catch {
       // body was not JSON
     }
-    throw new ApiError(message, response.status, response.statusText);
+    throw new ApiError(message, response.status, response.statusText, retryAfterSeconds(response));
   }
 
   return response.json();

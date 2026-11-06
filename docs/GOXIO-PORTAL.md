@@ -31,7 +31,7 @@ goxio portal account alias --login sahabify --alias sahabify@gmail.com
 
 `Sahabify` and `Sahabify@Gmail.com` are the same account as `sahabify`. `saha.bify@gmail.com` and `sahabify+ops@gmail.com` are not. A wrong password does not open a session and does not save an alias.
 
-Spaces, newlines, a byte-order mark, and zero-width characters at the **ends** of a pasted password are not part of the secret. Spaces inside it count. New passwords are stored that way. An older hash that included a trailing space still matches that exact password.
+The password is compared byte for byte with the stored secret. A trailing space, a newline, or a different capital letter does not match. The sign-in form can show the password and warns when the field has leading or trailing space or Caps Lock; it does not remove them. The login name is still case-folded, and spaces around the login name are not part of the name.
 
 On process start, mixed-case login and alias strings in account files are rewritten to that canonical form. The password hash, account id, and session files are not rewritten. Two records that would become the same name are not merged.
 

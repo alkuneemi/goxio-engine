@@ -13,7 +13,7 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/portal"
 )
 
-const loginHelp = "لم تُقبل بيانات الدخول. لم تُفتح جلسة. المسافة في طرف كلمة المرور والسطر الجديد في نهاية اللصق ليسا جزءًا منها. المسافة داخلها تُحسب. لا يُرسل بريد لإعادة التعيين. That login or password was not accepted. No session was opened. Spaces at the ends of a pasted password and a final newline are not part of it. Spaces inside it count. GoXIO does not email a reset."
+const loginHelp = "لم تُقبل بيانات الدخول. لم تُفتح جلسة. كلمة المرور تُقارن كما أُرسلت، بما فيها المسافة وحالة الأحرف. لا يُرسل بريد لإعادة التعيين. That login or password was not accepted. No session was opened. The password is compared exactly, including spaces and letter case. GoXIO does not email a reset."
 
 const registerTakenHelp = "هذا الدخول مستخدم. لم يُربط بحساب موجود ولم تُفتح جلسة. اختر دخولًا آخر. That login is already in use. It was not attached to an existing account and no session was opened. Choose a different login."
 

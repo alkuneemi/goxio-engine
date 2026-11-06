@@ -218,9 +218,9 @@ func openPortal() (*portal.Store, error) {
 }
 
 func readPortalPassword() (string, error) {
-	// CreateAccount applies the paste rules. Do not trim here, or a space that
-	// is inside the secret would still be kept, but the HTTP sign-in path and
-	// the CLI would stop sharing one definition of the ends.
+	// The stored secret is these exact bytes. A trailing newline in the
+	// environment value is part of the password. TrimSpace is only the
+	// emptiness check.
 	if p, ok := os.LookupEnv("GOXIO_PORTAL_PASSWORD"); ok && strings.TrimSpace(p) != "" {
 		return p, nil
 	}

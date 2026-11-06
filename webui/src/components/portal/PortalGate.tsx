@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { api, setPortalSession } from '../../api';
+import { api, portalFailure, setPortalSession } from '../../api';
 import type { PortalServer } from '../../types';
 import styles from './PortalGate.module.css';
 
@@ -16,6 +16,8 @@ export default function PortalGate({ children }: PortalGateProps) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [error, setError] = useState('');
   const [csrf, setCsrf] = useState('');
   const [servers, setServers] = useState<PortalServer[]>([]);
@@ -51,7 +53,7 @@ export default function PortalGate({ children }: PortalGateProps) {
       setCsrf(res.data.csrf);
       await loadServers(res.data.csrf);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed');
+      setError(portalFailure(err));
     } finally {
       setBusy(false);
     }
@@ -70,10 +72,27 @@ export default function PortalGate({ children }: PortalGateProps) {
       setPortalSession('', res.data.csrf);
       setPhase('servers');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the account');
+      setError(portalFailure(err));
     } finally {
       setBusy(false);
     }
+  };
+
+  const secretWarnings = (() => {
+    const notes: string[] = [];
+    if (password.length > 0 && password !== password.trim()) {
+      notes.push('هناك مسافة في طرف كلمة المرور ولن تُحذف. A space at the end or start is part of the password and is not removed.');
+    }
+    if (confirm.length > 0 && confirm !== confirm.trim()) {
+      notes.push('هناك مسافة في طرف التأكيد ولن تُحذف. A space on the confirmation is kept.');
+    }
+    if (capsLock) {
+      notes.push('مفتاح الأحرف الكبيرة يعمل. الحرف الكبير يُحسب. Caps Lock is on. Capitals count.');
+    }
+    return notes;
+  })();
+  const onSecretKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    setCapsLock(e.getModifierState('CapsLock'));
   };
 
   const openServer = (srv: PortalServer) => {
@@ -139,15 +158,45 @@ export default function PortalGate({ children }: PortalGateProps) {
         <label>
           <span>كلمة المرور</span>
           <span className={styles.hint} dir="ltr">{signup ? 'Password, at least 12 characters' : 'Password'}</span>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={signup ? 'new-password' : 'current-password'} enterKeyHint={signup ? 'next' : 'go'} required />
+          <span className={styles.secret}>
+            <input
+              type={showSecret ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyUp={onSecretKey}
+              onKeyDown={onSecretKey}
+              autoComplete={signup ? 'new-password' : 'current-password'}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint={signup ? 'next' : 'go'}
+              required
+            />
+            <button type="button" className={styles.peek} onClick={() => setShowSecret(v => !v)}>
+              {showSecret ? 'إخفاء · Hide' : 'إظهار · Show'}
+            </button>
+          </span>
         </label>
         {signup && (
           <label>
             <span>تأكيد كلمة المرور</span>
             <span className={styles.hint} dir="ltr">Confirm password</span>
-            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" enterKeyHint="go" required />
+            <input
+              type={showSecret ? 'text' : 'password'}
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              onKeyUp={onSecretKey}
+              onKeyDown={onSecretKey}
+              autoComplete="new-password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="go"
+              required
+            />
           </label>
         )}
+        {secretWarnings.map(note => <p key={note} className={styles.warn} dir="ltr">{note}</p>)}
         <div className={styles.help}>
           {signup ? (
             <>
@@ -156,8 +205,8 @@ export default function PortalGate({ children }: PortalGateProps) {
             </>
           ) : (
             <>
-              <p>إن رُفض الدخول لا تُفتح جلسة. المسافة في طرف كلمة المرور والسطر الجديد من اللصق لا يُحسبان، والمسافة داخلها تُحسب. لا يُرسل بريد لإعادة التعيين.</p>
-              <p dir="ltr">A rejected sign-in opens no session. Spaces at the ends of a pasted password and a final newline are not part of it. Spaces inside it count. GoXIO does not email a reset.</p>
+              <p>إن رُفض الدخول لا تُفتح جلسة. كلمة المرور تُرسل كما هي، والمسافة وحالة الأحرف جزء منها. لا يُرسل بريد لإعادة التعيين.</p>
+              <p dir="ltr">A rejected sign-in opens no session. The password is sent unchanged. Spaces and capitals count. GoXIO does not email a reset.</p>
             </>
           )}
         </div>

@@ -87,7 +87,10 @@ func TestSignupEmptyTenantAndLoginAliases(t *testing.T) {
 		t.Fatal("signup attached itself to the owner")
 	}
 
-	w := post("/api/portal/register", `{"login":"Fresh@Example.com","password":"password-fresh-ok\n","confirm":" password-fresh-ok "}`, "http://example.com")
+	if w := post("/api/portal/register", `{"login":"Fresh@Example.com","password":"password-fresh-ok\n","confirm":"password-fresh-ok"}`, "http://example.com"); w.Code != http.StatusBadRequest {
+		t.Fatalf("newline confirm mismatch %d %s", w.Code, w.Body.String())
+	}
+	w := post("/api/portal/register", `{"login":"Fresh@Example.com","password":"password-fresh-ok","confirm":"password-fresh-ok"}`, "http://example.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("register %d %s", w.Code, w.Body.String())
 	}
@@ -151,8 +154,12 @@ func TestSignupEmptyTenantAndLoginAliases(t *testing.T) {
 	}
 
 	pasted := post("/api/portal/login", `{"login":"OWNER","password":"password-owner-ok\r\n"}`, "http://example.com")
-	if pasted.Code != http.StatusOK {
-		t.Fatalf("pasted owner login %d %s", pasted.Code, pasted.Body.String())
+	if pasted.Code != http.StatusUnauthorized {
+		t.Fatalf("trailing password bytes should stay a rejection, got %d %s", pasted.Code, pasted.Body.String())
+	}
+	exact := post("/api/portal/login", `{"login":"OWNER","password":"password-owner-ok"}`, "http://example.com")
+	if exact.Code != http.StatusOK {
+		t.Fatalf("exact owner login %d %s", exact.Code, exact.Body.String())
 	}
 	emailed := post("/api/portal/login", `{"login":"Owner@Example.com","password":"password-owner-ok"}`, "")
 	if emailed.Code != http.StatusOK {
