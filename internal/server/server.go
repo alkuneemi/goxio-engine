@@ -24,6 +24,7 @@ type Server struct {
 	registry       adapters.Registry
 	logger         *zap.SugaredLogger
 	portal         *portal.Store
+	oidc           *oidcRuntime
 }
 
 // NewServer returns the HTTP server and a cleanup function that should
@@ -97,12 +98,17 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 		logger.Errorw("portal store unavailable; map routes will refuse", "err", err)
 	}
 
+	var oidc *oidcRuntime
+	if cfg, ok := oidcConfigFromEnv(); ok {
+		oidc = newOIDC(cfg)
+	}
 	s := &Server{
 		port:           port,
 		allowedOrigins: allowedOrigins,
 		registry:       reg,
 		logger:         logger,
 		portal:         portalStore,
+		oidc:           oidc,
 	}
 
 	server := &http.Server{

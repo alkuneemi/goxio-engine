@@ -45,6 +45,31 @@ If that login is already a slug, an alias, or the exact local part of an existin
 
 The browser sends `X-GoXIO-Request: 1`. When it also sends `Origin` or `Referer`, that host must match the request host. `X-Forwarded-Host` is used only when the TCP peer is on `GOXIO_TRUSTED_PROXIES`. The session cookie stays HttpOnly, Secure unless `GOXIO_COOKIE_SECURE=0`, and SameSite=Strict.
 
+## Omxio sign-in
+
+The button **الدخول بحساب أومكسيو** starts an OpenID Connect authorization-code flow with PKCE. GoXIO does not collect or store the Omxio password, and it does not read Omxio’s password database.
+
+On 2026-11-06 the repository `https://github.com/alkuneemi/omxio` was not readable with this environment’s GitHub credentials (the API returned 404). No issuer URL was guessed from the product name. Nothing in this build calls an Omxio host unless an operator sets all of these:
+
+| Variable | Meaning |
+|---|---|
+| `GOXIO_OIDC_ISSUER` | Exact issuer URL. Discovery is `{issuer}/.well-known/openid-configuration`. |
+| `GOXIO_OIDC_CLIENT_ID` | Client id registered at that issuer. |
+| `GOXIO_OIDC_CLIENT_SECRET` or `GOXIO_OIDC_CLIENT_SECRET_FILE` | Client secret. The file may end with one newline. It is not logged. |
+| `GOXIO_OIDC_REDIRECT_URI` | Exact redirect URI, for example `https://goxio.example/api/portal/oidc/callback`. |
+
+If any of those is missing, the button does not navigate. It says Omxio sign-in is not configured. A provider outage redirects to `/?sso_error=unavailable` and local GoXIO login still works. A rejected token redirects to `/?sso_error=rejected` and does not open a session.
+
+The provider contract, which is not implemented in the Omxio repo from here:
+
+- Authorization endpoint accepts `response_type=code`, `scope=openid`, `state`, `nonce`, `code_challenge`, `code_challenge_method=S256`, and the exact `redirect_uri`.
+- Token endpoint accepts `authorization_code`, the same `redirect_uri`, `code_verifier`, and HTTP Basic client authentication.
+- ID token is RS256. Required claims: `iss` equal to the configured issuer, `aud` containing the client id, `exp`, `iat`, `nonce`, and a stable `sub`.
+- `authorization_endpoint`, `token_endpoint`, and `jwks_uri` must be on the issuer’s host. GoXIO will not follow them anywhere else.
+- An `email` claim is ignored for account matching. A new `iss`+`sub` gets an empty GoXIO tenant. It is not attached to an existing tenant because the email matches. Linking happens only when that GoXIO user is already signed in and posts to `/api/portal/oidc/link` with the session CSRF token.
+
+The tests under `internal/server/oidc_test.go` speak this protocol to an in-process provider. They are not a live sign-in against Omxio.
+
 `187.127.114.87` is the remote server for the sahabify account. It is not the Omxio KSA host. Do not point this server record at the machine that serves `goxio.sa.omxio.com`.
 
 On the remote host (or a container whose mount namespace is that host), collect read-only and post the snapshot. `GOXIO_HOST_ROOT` rewrites a bind such as `/host-disk` back to host paths. Leave it unset when `df` already sees the host mounts.

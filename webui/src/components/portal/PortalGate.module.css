@@ -57,7 +57,8 @@
   text-align: left;
 }
 
-.card button, .switch, .link {
+.card a.link { text-decoration: none; text-align: center; display: flex; align-items: center; justify-content: center; }
+.card button, .card a.link, .switch, .link {
   background: #00D4C8;
   color: #041716;
   border: 0;

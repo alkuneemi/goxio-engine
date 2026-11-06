@@ -119,6 +119,10 @@ export const api = {
     return request('/portal/register', { method: 'POST', body: JSON.stringify({ login, password, confirm }) });
   },
 
+  async oidc(): Promise<{ data: { configured: boolean } }> {
+    return request('/portal/oidc');
+  },
+
   async logout(): Promise<void> {
     await request('/portal/logout', { method: 'POST', body: '{}' });
     setPortalSession('', '');

@@ -17,6 +17,7 @@ export default function PortalGate({ children }: PortalGateProps) {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [ssoConfigured, setSsoConfigured] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const [error, setError] = useState('');
   const [csrf, setCsrf] = useState('');
@@ -30,6 +31,19 @@ export default function PortalGate({ children }: PortalGateProps) {
     setServers(res.data ?? []);
     setPhase('servers');
   };
+
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('sso_error');
+    if (code === 'unavailable') {
+      setError('تعذر الوصول إلى خدمة هوية أومكسيو. استخدم دخول GoXIO أو أعد المحاولة. لم تُفتح جلسة. Omxio sign-in is unavailable. Use your GoXIO login or try again. No session was opened.');
+    } else if (code === 'rejected') {
+      setError('رفضت خدمة أومكسيو هذا الدخول. لم تُفتح جلسة ولم يُربط حساب. Omxio rejected this sign-in. No session was opened and no account was linked.');
+    } else if (code === 'unconfigured') {
+      setError('الدخول بحساب أومكسيو غير مُعد على هذا الخادم. لم تُفتح جلسة. Omxio sign-in is not configured on this server. No session was opened.');
+    }
+    if (code) window.history.replaceState(null, '', window.location.pathname);
+    api.oidc().then(res => setSsoConfigured(res.data.configured)).catch(() => setSsoConfigured(false));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,6 +226,14 @@ export default function PortalGate({ children }: PortalGateProps) {
         </div>
         {error && <p className={styles.err} role="alert">{error}</p>}
         <button type="submit" disabled={busy}>{signup ? <><bdi>إنشاء الحساب</bdi> · <bdi dir="ltr">Create account</bdi></> : <><bdi>دخول</bdi> · <bdi dir="ltr">Sign in</bdi></>}</button>
+        {ssoConfigured ? (
+          <a className={styles.link} href="/api/portal/oidc/start">الدخول بحساب أومكسيو</a>
+        ) : (
+          <button type="button" className={styles.link} onClick={() => setError('الدخول بحساب أومكسيو غير مُعد على هذا الخادم. لم تُفتح جلسة. Omxio sign-in is not configured on this server. No session was opened.')}>
+            الدخول بحساب أومكسيو
+          </button>
+        )}
+        <p className={styles.hint} dir="ltr">Omxio sign-in uses that service. GoXIO does not receive the Omxio password.</p>
         <button
           type="button"
           className={styles.link}
@@ -258,6 +280,12 @@ export default function PortalGate({ children }: PortalGateProps) {
             {error && <p className={styles.err}>{error}</p>}
             <button type="button" onClick={refresh}>Request refresh</button>
           </div>
+        )}
+        {ssoConfigured && (
+          <form method="post" action="/api/portal/oidc/link">
+            <input type="hidden" name="csrf" value={csrf} />
+            <button type="submit" className={styles.link}>ربط حساب أومكسيو · Link an Omxio account</button>
+          </form>
         )}
         <button type="button" className={styles.link} onClick={signOut}><bdi>خروج</bdi> · <bdi dir="ltr">Sign out</bdi></button>
       </div>

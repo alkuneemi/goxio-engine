@@ -61,6 +61,10 @@ type Account struct {
 	Aliases      []string  `json:"aliases,omitempty"`
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
+	// OIDCIssuer and OIDCSubject bind this account to one provider identity.
+	// They are not an email and are not a login name.
+	OIDCIssuer  string `json:"oidc_issuer,omitempty"`
+	OIDCSubject string `json:"oidc_subject,omitempty"`
 }
 
 // Server is stored on disk. IngestHash is never copied into ServerView.
@@ -166,7 +170,7 @@ func Open(dir string, opt Options) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	for _, sub := range []string{"accounts", "sessions", "servers", "snapshots", "receipts"} {
+	for _, sub := range []string{"accounts", "sessions", "servers", "snapshots", "receipts", "oidc-pending", "oidc-subjects"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
 			return nil, err
 		}
