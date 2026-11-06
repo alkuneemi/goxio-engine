@@ -134,6 +134,40 @@ func (s *Store) slugForUnboundEmail(canon string) (Account, bool) {
 	return acct, true
 }
 
+// Register creates one new account and a session for it.
+// The account id is generated here. Login, password, and confirm are the only
+// inputs. An address reserved by an existing slug is rejected and not attached.
+func (s *Store) Register(login, password, confirm string) (Session, error) {
+	login, err := canonicalLogin(login)
+	if err != nil {
+		return Session{}, err
+	}
+	password, err = preparePassword(password)
+	if err != nil {
+		return Session{}, err
+	}
+	if cleanCopiedPassword(confirm) != password {
+		return Session{}, policy("passwords do not match")
+	}
+	if _, err := s.CreateAccount(login, password); err != nil {
+		return Session{}, err
+	}
+	sess, err := s.Authenticate(login, password)
+	if err != nil {
+		if errors.Is(err, ErrInvalid) {
+			return Session{}, errSignInPending
+		}
+		return Session{}, err
+	}
+	return sess, nil
+}
+
+// errSignInPending means the account file was written and the session was not.
+var errSignInPending = errors.New("account created; sign-in did not complete")
+
+// SignInPending reports that register stored the account and did not open a session.
+func SignInPending(err error) bool { return errors.Is(err, errSignInPending) }
+
 func (s *Store) attachAlias(acct Account, alias string) error {
 	fresh, err := s.readAccount(acct.ID)
 	if err != nil {

@@ -11,8 +11,11 @@ interface PortalGateProps {
 export default function PortalGate({ children }: PortalGateProps) {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<'checking' | 'login' | 'servers' | 'pending' | 'map'>('checking');
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [csrf, setCsrf] = useState('');
   const [servers, setServers] = useState<PortalServer[]>([]);
@@ -41,6 +44,7 @@ export default function PortalGate({ children }: PortalGateProps) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setBusy(true);
     try {
       const res = await api.login(login.trim(), password);
       setPassword('');
@@ -48,6 +52,27 @@ export default function PortalGate({ children }: PortalGateProps) {
       await loadServers(res.data.csrf);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      const res = await api.register(login.trim(), password, confirm);
+      setPassword('');
+      setConfirm('');
+      setCsrf(res.data.csrf);
+      setServers(res.data.servers ?? []);
+      setPortalSession('', res.data.csrf);
+      setPhase('servers');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the account');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -80,6 +105,8 @@ export default function PortalGate({ children }: PortalGateProps) {
     queryClient.clear();
     setCurrent(null);
     setServers([]);
+    setMode('login');
+    setConfirm('');
     setPhase('login');
   };
 
@@ -88,24 +115,80 @@ export default function PortalGate({ children }: PortalGateProps) {
   }
 
   if (phase === 'login') {
+    const signup = mode === 'signup';
     return (
-      <form className={styles.card} onSubmit={submit}>
-        <h1><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
-        <p>Sign in to your servers. This login is the GoXIO portal, separate from any other product.</p>
-        <label>Login<input value={login} onChange={e => setLogin(e.target.value)} autoComplete="username" required /></label>
-        <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
-        {error && <p className={styles.err}>{error}</p>}
-        <button type="submit">Sign in</button>
+      <div className={styles.gate}>
+      <form className={styles.card} dir="rtl" lang="ar" onSubmit={signup ? submitSignup : submit}>
+        <h1 dir="ltr"><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
+        {signup ? (
+          <>
+            <p>إنشاء حساب جديد وفارغ. لا يرى خوادم أي حساب آخر، ولا يطلب مفتاح SSH.</p>
+            <p dir="ltr">A new account starts empty. It cannot see another account’s servers, and it does not ask for an SSH key.</p>
+          </>
+        ) : (
+          <>
+            <p>تسجيل الدخول إلى خوادمك. هذا حساب GoXIO، وليس منتجًا آخر.</p>
+            <p dir="ltr">Sign in to your servers. This is the GoXIO portal, not another product.</p>
+          </>
+        )}
+        <label>
+          <span>البريد أو اسم الدخول</span>
+          <span className={styles.hint} dir="ltr">Email or login name</span>
+          <input value={login} onChange={e => setLogin(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" required />
+        </label>
+        <label>
+          <span>كلمة المرور</span>
+          <span className={styles.hint} dir="ltr">{signup ? 'Password, at least 12 characters' : 'Password'}</span>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={signup ? 'new-password' : 'current-password'} enterKeyHint={signup ? 'next' : 'go'} required />
+        </label>
+        {signup && (
+          <label>
+            <span>تأكيد كلمة المرور</span>
+            <span className={styles.hint} dir="ltr">Confirm password</span>
+            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" enterKeyHint="go" required />
+          </label>
+        )}
+        <div className={styles.help}>
+          {signup ? (
+            <>
+              <p>الحساب لا يُربط بحساب موجود. إن كان الدخول مستخدمًا تُرفض المحاولة ولا تُفتح جلسة. لا يُرسل بريد.</p>
+              <p dir="ltr">The account is not linked to an existing one. If the login is taken, nothing is opened. No email is sent.</p>
+            </>
+          ) : (
+            <>
+              <p>إن رُفض الدخول لا تُفتح جلسة. المسافة في طرف كلمة المرور والسطر الجديد من اللصق لا يُحسبان، والمسافة داخلها تُحسب. لا يُرسل بريد لإعادة التعيين.</p>
+              <p dir="ltr">A rejected sign-in opens no session. Spaces at the ends of a pasted password and a final newline are not part of it. Spaces inside it count. GoXIO does not email a reset.</p>
+            </>
+          )}
+        </div>
+        {error && <p className={styles.err} role="alert">{error}</p>}
+        <button type="submit" disabled={busy}>{signup ? <><bdi>إنشاء الحساب</bdi> · <bdi dir="ltr">Create account</bdi></> : <><bdi>دخول</bdi> · <bdi dir="ltr">Sign in</bdi></>}</button>
+        <button
+          type="button"
+          className={styles.link}
+          disabled={busy}
+          onClick={() => { setMode(signup ? 'login' : 'signup'); setError(''); setConfirm(''); }}
+        >
+          {signup ? <><bdi>لديك حساب؟ تسجيل الدخول</bdi> · <bdi dir="ltr">Sign in</bdi></> : <><bdi>إنشاء حساب</bdi> · <bdi dir="ltr">Create an account</bdi></>}
+        </button>
       </form>
+      </div>
     );
   }
 
   if (phase === 'servers' || phase === 'pending') {
     return (
-      <div className={styles.card}>
-        <h1><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
-        <p>Your servers only. An empty server stays pending — no demo map and no other account’s inventory.</p>
-        {servers.length === 0 && <p>No servers are assigned to this account yet.</p>}
+      <div className={styles.gate}>
+      <div className={styles.card} dir="rtl" lang="ar">
+        <h1 dir="ltr"><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
+        <p>خوادمك فقط. الخادم الفارغ يبقى قيد التجهيز، بلا خريطة تجريبية وبلا جرد حساب آخر.</p>
+        <p dir="ltr">Your servers only. An empty server stays pending. There is no demo map and no other account’s inventory.</p>
+        {servers.length === 0 && (
+          <>
+            <p>لا توجد خوادم في هذا الحساب. الخريطة فارغة ولم يُنسخ أي جرد.</p>
+            <p dir="ltr">This account has no servers. The map is empty and no inventory was copied.</p>
+          </>
+        )}
         <ul className={styles.list}>
           {servers.map(srv => (
             <li key={srv.id}>
@@ -127,7 +210,8 @@ export default function PortalGate({ children }: PortalGateProps) {
             <button type="button" onClick={refresh}>Request refresh</button>
           </div>
         )}
-        <button type="button" className={styles.link} onClick={signOut}>Sign out</button>
+        <button type="button" className={styles.link} onClick={signOut}><bdi>خروج</bdi> · <bdi dir="ltr">Sign out</bdi></button>
+      </div>
       </div>
     );
   }

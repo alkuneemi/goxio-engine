@@ -2,14 +2,20 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gorilla/mux"
 
 	"github.com/guilherme-grimm/graph-go/internal/portal"
 )
+
+const loginHelp = "لم تُقبل بيانات الدخول. لم تُفتح جلسة. المسافة في طرف كلمة المرور والسطر الجديد في نهاية اللصق ليسا جزءًا منها. المسافة داخلها تُحسب. لا يُرسل بريد لإعادة التعيين. That login or password was not accepted. No session was opened. Spaces at the ends of a pasted password and a final newline are not part of it. Spaces inside it count. GoXIO does not email a reset."
+
+const registerTakenHelp = "هذا الدخول مستخدم. لم يُربط بحساب موجود ولم تُفتح جلسة. اختر دخولًا آخر. That login is already in use. It was not attached to an existing account and no session was opened. Choose a different login."
 
 func (s *Server) requireSession(w http.ResponseWriter, r *http.Request) (portal.Session, bool) {
 	if s.portal == nil {
@@ -66,30 +72,154 @@ func (s *Server) portalLoginHandler(w http.ResponseWriter, r *http.Request) {
 		Login    string `json:"login"`
 		Password string `json:"password"`
 	}
+	if !sameSiteBrowser(r, s.portal.TrustProxy()) {
+		writeAPIError(w, http.StatusBadRequest, "sign-in rejected")
+		return
+	}
 	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<16))
+	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid login")
 		return
 	}
 	ip := portal.ClientIP(r, s.portal.TrustProxy())
-	key := ip + "|" + strings.ToLower(strings.TrimSpace(body.Login))
+	key := "login|" + ip + "|" + portal.LoginKey(body.Login)
 	if err := s.portal.AllowLogin(key); err != nil {
 		writeAPIError(w, http.StatusTooManyRequests, "too many attempts")
 		return
 	}
 	sess, err := s.portal.Authenticate(body.Login, body.Password)
 	if err != nil {
+		if !errors.Is(err, portal.ErrInvalid) {
+			writeAPIError(w, http.StatusInternalServerError, "sign-in unavailable")
+			return
+		}
 		s.portal.NoteLoginFail(key)
-		writeAPIError(w, http.StatusUnauthorized, "invalid login or password")
+		writeLoginDenied(w)
 		return
 	}
 	s.portal.ClearLoginFail(key)
 	s.portal.WriteSessionCookie(w, sess)
 	writeData(w, s.logger, map[string]any{
-		"login":      strings.ToLower(strings.TrimSpace(body.Login)),
+		"login":      portal.LoginKey(body.Login),
 		"csrf":       sess.CSRF,
 		"expires_at": sess.ExpiresAt,
 	})
+}
+
+func (s *Server) portalRegisterHandler(w http.ResponseWriter, r *http.Request) {
+	if s.portal == nil {
+		writeAPIError(w, http.StatusUnauthorized, "sign-in required")
+		return
+	}
+	if !sameSiteBrowser(r, s.portal.TrustProxy()) {
+		writeAPIError(w, http.StatusBadRequest, "registration rejected")
+		return
+	}
+	var body struct {
+		Login    string `json:"login"`
+		Password string `json:"password"`
+		Confirm  string `json:"confirm"`
+	}
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<16))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid registration")
+		return
+	}
+	key := "signup|" + portal.ClientIP(r, s.portal.TrustProxy()) + "|" + portal.LoginKey(body.Login)
+	if err := s.portal.AllowLogin(key); err != nil {
+		writeAPIError(w, http.StatusTooManyRequests, "too many attempts")
+		return
+	}
+	sess, err := s.portal.Register(body.Login, body.Password, body.Confirm)
+	if err != nil {
+		s.portal.NoteLoginFail(key)
+		if errors.Is(err, portal.ErrExists) {
+			writeStatusJSON(w, http.StatusConflict, map[string]string{"error": "that login is already in use", "help": registerTakenHelp})
+			return
+		}
+		if portal.SignInPending(err) {
+			// 503, not 200. The account exists and no session cookie is set.
+			writeAPIError(w, http.StatusServiceUnavailable, "account created; sign-in did not complete")
+			return
+		}
+		var pe *portal.PolicyError
+		if errors.As(err, &pe) {
+			writeAPIError(w, http.StatusBadRequest, pe.Error())
+			return
+		}
+		msg := err.Error()
+		if strings.Contains(msg, "login") || strings.Contains(msg, "email") {
+			writeAPIError(w, http.StatusBadRequest, msg)
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "registration unavailable")
+		return
+	}
+	s.portal.ClearLoginFail(key)
+	s.portal.WriteSessionCookie(w, sess)
+	list, err := s.portal.ListServers(sess.AccountID)
+	if err != nil {
+		list = []portal.ServerView{}
+	}
+	writeData(w, s.logger, map[string]any{
+		"login":      portal.LoginKey(body.Login),
+		"csrf":       sess.CSRF,
+		"expires_at": sess.ExpiresAt,
+		"status":     "empty",
+		"servers":    list,
+		"detail":     "الحساب جديد وفارغ. لا خوادم ولا جرد. لم يُنسخ أي مفتاح. The account is new and empty. It has no servers and no inventory. No key was copied.",
+	})
+}
+
+func writeLoginDenied(w http.ResponseWriter) {
+	writeStatusJSON(w, http.StatusUnauthorized, map[string]string{
+		"error": "invalid login or password",
+		"help":  loginHelp,
+	})
+}
+
+func writeStatusJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func sameSiteBrowser(r *http.Request, trustProxy bool) bool {
+	if r.Header.Get("X-GoXIO-Request") != "1" {
+		return false
+	}
+	host := requestHost(r, trustProxy)
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		ref := strings.TrimSpace(r.Header.Get("Referer"))
+		if ref == "" {
+			return true
+		}
+		u, err := url.Parse(ref)
+		if err != nil || u.Host == "" {
+			return false
+		}
+		return strings.EqualFold(u.Host, host)
+	}
+	if strings.EqualFold(origin, "null") {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	return strings.EqualFold(u.Host, host)
+}
+
+func requestHost(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if h := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); h != "" {
+			return strings.TrimSpace(strings.Split(h, ",")[0])
+		}
+	}
+	return r.Host
 }
 
 func (s *Server) portalLogoutHandler(w http.ResponseWriter, r *http.Request) {

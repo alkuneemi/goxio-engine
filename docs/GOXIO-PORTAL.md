@@ -23,12 +23,27 @@ goxio portal server add --login sahabify --name sahabify --address 187.127.114.8
   > /root/sahabify.ingest.token
 chmod 600 /root/sahabify.ingest.token
 
-# Optional email sign-in for the same account. This does not create a second tenant.
-# Dots and +tags are not folded, so look-alike addresses stay different people.
+# Optional. The same slug also accepts sahabify@gmail.com on sign-in (any domain,
+# local part exactly sahabify). A successful sign-in stores that address as an alias.
+# This command does the same thing without waiting for a sign-in.
 goxio portal account alias --login sahabify --alias sahabify@gmail.com
 ```
 
-A server added while `goxio serve` is already running is accepted on the next ingest. The process re-reads token files when the token is unknown. A restart is not required. `Sahabify@Gmail.com` signs in as `sahabify@gmail.com`. `saha.bify@gmail.com` does not.
+`Sahabify` and `Sahabify@Gmail.com` are the same account as `sahabify`. `saha.bify@gmail.com` and `sahabify+ops@gmail.com` are not. A wrong password does not open a session and does not save an alias.
+
+Spaces, newlines, a byte-order mark, and zero-width characters at the **ends** of a pasted password are not part of the secret. Spaces inside it count. New passwords are stored that way. An older hash that included a trailing space still matches that exact password.
+
+On process start, mixed-case login and alias strings in account files are rewritten to that canonical form. The password hash, account id, and session files are not rewritten. Two records that would become the same name are not merged.
+
+A server added while `goxio serve` is already running is accepted on the next ingest. The process re-reads token files when the token is unknown. A restart is not required.
+
+## Create an account
+
+The sign-in screen includes **إنشاء حساب**. It posts `login`, `password`, and `confirm` to `POST /api/portal/register`. The server generates the account id. A body that also names an account, tenant, or server is rejected and creates nothing. The new account has no servers and no snapshot. It cannot read another account’s map, and the form does not ask for an SSH key or a host.
+
+If that login is already a slug, an alias, or the exact local part of an existing slug, the response is `409` and nothing is attached. There is no reset email. A failed sign-in stays `401` with the same “invalid login or password” text.
+
+The browser sends `X-GoXIO-Request: 1`. When it also sends `Origin` or `Referer`, that host must match the request host (`X-Forwarded-Host` only if `GOXIO_TRUST_PROXY=1`). The session cookie stays HttpOnly, Secure unless `GOXIO_COOKIE_SECURE=0`, and SameSite=Strict.
 
 `187.127.114.87` is the remote server for the sahabify account. It is not the Omxio KSA host. Do not point this server record at the machine that serves `goxio.sa.omxio.com`.
 
@@ -101,7 +116,7 @@ systemctl stop goxio   # or the unit/container name you actually use
 tar -C /var/lib/goxio -czf "/var/backups/goxio-portal-$(date -u +%Y%m%dT%H%M%SZ).tar.gz" portal
 ```
 
-Rollback is the previous binary plus that archive:
+Rollback is the previous binary plus that archive. Accounts created by self-service signup after the backup disappear with the archive, and sessions issued after it stop working. That is the restore. No email is sent and no host is dialed.
 
 ```bash
 systemctl stop goxio
@@ -109,6 +124,8 @@ tar -C /var/lib/goxio -xzf /var/backups/goxio-portal-TIMESTAMP.tar.gz
 # restore the previous goxio binary, then
 systemctl start goxio
 ```
+
+There is no separate migration command. The first start of this binary rewrites mixed-case login strings as described above. Take the backup before that start.
 
 Actions in the UI record delete, archive, and transfer intent only. They do not SSH, delete remote files, or change Docker on the customer server.
 
@@ -119,7 +136,7 @@ Proxy basic auth in front of the site is not tenant isolation. Keep it only as a
 This is not a claim that the portal is fully secure.
 
 - One process and one data directory. Sessions and snapshots are files. A second replica needs that directory shared, and the login rate limit is still per process.
-- No second factor, no self-service password reset, no email. An operator resets a password by creating a new account or replacing the hash out of band.
+- No second factor and no password-reset email. Self-service signup creates an empty account. An operator still resets a password by replacing the hash out of band. GoXIO does not send mail.
 - The engine will not pull a map over SSH. If the collector on the remote host does not post, the server stays pending.
 - `goxio scan` and `goxio mcp` still describe the engine host’s own Docker or Kubernetes discovery when an operator runs them on that host. They are not served to portal users. Server stderr from discovery can still name local containers.
 - A size walk that has not finished is `partial` or `timeout`, with progress saved in the snapshot. Repeating the same full-tree `du` is not how a large directory completes. Unreadable paths stay unreadable and are not stored as zero. `complete` stays false while any walk is unfinished.

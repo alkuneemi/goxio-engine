@@ -5,10 +5,16 @@
 
 .center { padding: 48px; }
 
+.gate {
+  height: 100%;
+  overflow: auto;
+  padding: 16px 12px 32px;
+}
+
 .card {
-  max-width: 440px;
-  margin: 10vh auto;
-  padding: 24px;
+  width: min(440px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px 28px;
   background: #121816;
   border: 1px solid var(--border-default);
   border-top: 3px solid #00D4C8;
@@ -16,6 +22,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: none;
 }
 
 .card h1 { margin: 0; font-family: var(--font-mono); }
@@ -24,14 +31,20 @@
 
 .card p { margin: 0; color: var(--text-secondary); line-height: 1.45; }
 
-.card label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.card label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--text-secondary); }
+.hint { font-size: 12px; text-align: start; }
+.help { font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+.help p, .card > p { text-align: start; }
 .card input {
   background: #0c0c0c;
   color: var(--text-primary);
   border: 1px solid var(--border-default);
   border-radius: 6px;
-  padding: 8px;
-  font: inherit;
+  padding: 10px 12px;
+  min-height: 44px;
+  font-size: 16px;
+  direction: ltr;
+  text-align: left;
 }
 
 .card button, .switch, .link {
@@ -39,10 +52,14 @@
   color: #041716;
   border: 0;
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 10px 12px;
+  min-height: 44px;
+  font-size: 16px;
   font-weight: 650;
   cursor: pointer;
 }
+
+.card button:disabled { opacity: 0.6; cursor: default; }
 
 .link { background: transparent; color: var(--text-secondary); }
 
@@ -63,6 +80,11 @@
 .err { color: #f87171; }
 
 .shell { height: 100%; }
+
+@media (max-width: 640px) {
+  .card { padding: 20px 14px 24px; }
+  .switch { right: 8px; top: 8px; }
+}
 .switch {
   position: fixed;
   z-index: 260;

@@ -86,6 +86,10 @@ export const api = {
     return request('/portal/login', { method: 'POST', body: JSON.stringify({ login, password }) });
   },
 
+  async register(login: string, password: string, confirm: string): Promise<{ data: { login: string; csrf: string; status: string; detail: string; servers: PortalServer[] } }> {
+    return request('/portal/register', { method: 'POST', body: JSON.stringify({ login, password, confirm }) });
+  },
+
   async logout(): Promise<void> {
     await request('/portal/logout', { method: 'POST', body: '{}' });
     setPortalSession('', '');

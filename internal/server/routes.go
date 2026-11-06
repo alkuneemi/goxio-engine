@@ -26,6 +26,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	// API routes
 	r.HandleFunc("/api/portal/login", s.portalLoginHandler).Methods("POST")
+	r.HandleFunc("/api/portal/register", s.portalRegisterHandler).Methods("POST")
 	r.HandleFunc("/api/portal/logout", s.portalLogoutHandler).Methods("POST")
 	r.HandleFunc("/api/portal/me", s.portalMeHandler).Methods("GET")
 	r.HandleFunc("/api/portal/servers", s.portalServersHandler).Methods("GET")
