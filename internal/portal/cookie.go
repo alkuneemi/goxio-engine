@@ -1,9 +1,7 @@
 package portal
 
 import (
-	"net"
 	"net/http"
-	"strings"
 )
 
 func (s *Store) CookieName() string {
@@ -46,20 +44,4 @@ func (s *Store) ReadSessionCookie(r *http.Request) string {
 		return ""
 	}
 	return c.Value
-}
-
-func ClientIP(r *http.Request, trustProxy bool) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	if !trustProxy {
-		return host
-	}
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff == "" {
-		return host
-	}
-	parts := strings.Split(xff, ",")
-	return strings.TrimSpace(parts[len(parts)-1])
 }

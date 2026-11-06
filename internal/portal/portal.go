@@ -46,10 +46,13 @@ var (
 type Options struct {
 	SecureCookies bool
 	TrustProxy    bool
-	BcryptCost    int
-	SessionTTL    time.Duration
-	LoginMax      int
-	LoginWindow   time.Duration
+	// TrustedProxies is the only set of peers allowed to supply a client IP.
+	// TrustProxy without this list does not honor forwarded headers.
+	TrustedProxies *TrustedProxies
+	BcryptCost     int
+	SessionTTL     time.Duration
+	LoginMax       int
+	LoginWindow    time.Duration
 }
 
 type Account struct {
@@ -195,6 +198,23 @@ func Open(dir string, opt Options) (*Store, error) {
 
 func (s *Store) SecureCookies() bool { return s.opt.SecureCookies }
 func (s *Store) TrustProxy() bool    { return s.opt.TrustProxy }
+func (s *Store) TrustedProxies() *TrustedProxies {
+	return s.opt.TrustedProxies
+}
+
+func (s *Store) RetryAfter(key string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneFails(key)
+	if len(s.fails[key]) < s.opt.LoginMax || len(s.fails[key]) == 0 {
+		return 0
+	}
+	wait := time.Until(s.fails[key][0].Add(s.opt.LoginWindow))
+	if wait < time.Second {
+		return 1
+	}
+	return int(wait.Seconds()) + 1
+}
 
 func (s *Store) CreateAccount(login, password string) (Account, error) {
 	login, err := canonicalLogin(login)

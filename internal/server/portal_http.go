@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -72,7 +73,7 @@ func (s *Server) portalLoginHandler(w http.ResponseWriter, r *http.Request) {
 		Login    string `json:"login"`
 		Password string `json:"password"`
 	}
-	if !sameSiteBrowser(r, s.portal.TrustProxy()) {
+	if !sameSiteBrowser(r, s.portal.TrustedProxies()) {
 		writeAPIError(w, http.StatusBadRequest, "sign-in rejected")
 		return
 	}
@@ -82,10 +83,10 @@ func (s *Server) portalLoginHandler(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid login")
 		return
 	}
-	ip := portal.ClientIP(r, s.portal.TrustProxy())
+	ip := portal.ClientIP(r, s.portal.TrustedProxies())
 	key := "login|" + ip + "|" + portal.LoginKey(body.Login)
 	if err := s.portal.AllowLogin(key); err != nil {
-		writeAPIError(w, http.StatusTooManyRequests, "too many attempts")
+		writeRateLimited(w, s.portal.RetryAfter(key))
 		return
 	}
 	sess, err := s.portal.Authenticate(body.Login, body.Password)
@@ -112,7 +113,7 @@ func (s *Server) portalRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusUnauthorized, "sign-in required")
 		return
 	}
-	if !sameSiteBrowser(r, s.portal.TrustProxy()) {
+	if !sameSiteBrowser(r, s.portal.TrustedProxies()) {
 		writeAPIError(w, http.StatusBadRequest, "registration rejected")
 		return
 	}
@@ -127,9 +128,9 @@ func (s *Server) portalRegisterHandler(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid registration")
 		return
 	}
-	key := "signup|" + portal.ClientIP(r, s.portal.TrustProxy()) + "|" + portal.LoginKey(body.Login)
+	key := "signup|" + portal.ClientIP(r, s.portal.TrustedProxies()) + "|" + portal.LoginKey(body.Login)
 	if err := s.portal.AllowLogin(key); err != nil {
-		writeAPIError(w, http.StatusTooManyRequests, "too many attempts")
+		writeRateLimited(w, s.portal.RetryAfter(key))
 		return
 	}
 	sess, err := s.portal.Register(body.Login, body.Password, body.Confirm)
@@ -186,11 +187,19 @@ func writeStatusJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func sameSiteBrowser(r *http.Request, trustProxy bool) bool {
+func writeRateLimited(w http.ResponseWriter, seconds int) {
+	if seconds < 1 {
+		seconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	writeAPIError(w, http.StatusTooManyRequests, "too many attempts")
+}
+
+func sameSiteBrowser(r *http.Request, trust *portal.TrustedProxies) bool {
 	if r.Header.Get("X-GoXIO-Request") != "1" {
 		return false
 	}
-	host := requestHost(r, trustProxy)
+	host := portal.ForwardedHost(r, trust)
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
 		ref := strings.TrimSpace(r.Header.Get("Referer"))
@@ -211,15 +220,6 @@ func sameSiteBrowser(r *http.Request, trustProxy bool) bool {
 		return false
 	}
 	return strings.EqualFold(u.Host, host)
-}
-
-func requestHost(r *http.Request, trustProxy bool) string {
-	if trustProxy {
-		if h := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); h != "" {
-			return strings.TrimSpace(strings.Split(h, ",")[0])
-		}
-	}
-	return r.Host
 }
 
 func (s *Server) portalLogoutHandler(w http.ResponseWriter, r *http.Request) {

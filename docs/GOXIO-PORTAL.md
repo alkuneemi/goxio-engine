@@ -43,7 +43,7 @@ The sign-in screen includes **إنشاء حساب**. It posts `login`, `password
 
 If that login is already a slug, an alias, or the exact local part of an existing slug, the response is `409` and nothing is attached. There is no reset email. A failed sign-in stays `401` with the same “invalid login or password” text.
 
-The browser sends `X-GoXIO-Request: 1`. When it also sends `Origin` or `Referer`, that host must match the request host (`X-Forwarded-Host` only if `GOXIO_TRUST_PROXY=1`). The session cookie stays HttpOnly, Secure unless `GOXIO_COOKIE_SECURE=0`, and SameSite=Strict.
+The browser sends `X-GoXIO-Request: 1`. When it also sends `Origin` or `Referer`, that host must match the request host. `X-Forwarded-Host` is used only when the TCP peer is on `GOXIO_TRUSTED_PROXIES`. The session cookie stays HttpOnly, Secure unless `GOXIO_COOKIE_SECURE=0`, and SameSite=Strict.
 
 `187.127.114.87` is the remote server for the sahabify account. It is not the Omxio KSA host. Do not point this server record at the machine that serves `goxio.sa.omxio.com`.
 
@@ -86,7 +86,9 @@ That file must be sahabify’s inventory. Loading a collect taken on the KSA hos
 | Secure | yes, unless `GOXIO_COOKIE_SECURE=0` (local HTTP tests only) |
 | Lifetime | 12 hours, revoked on sign-out |
 
-Mutating browser calls send `X-GoXIO-Request: 1` and `X-CSRF-Token` from `GET /api/portal/me`. Login is rate-limited per client IP and login (8 failures / 15 minutes in one process). Set `GOXIO_TRUST_PROXY=1` only behind one reverse proxy; the last `X-Forwarded-For` hop is used. Otherwise the TCP peer address is used.
+Mutating browser calls send `X-GoXIO-Request: 1` and `X-CSRF-Token` from `GET /api/portal/me`. Login and signup are rate-limited per client address and login (8 failures / 15 minutes in one process). A `429` response includes `Retry-After`. The browser shows that wait separately from a wrong password and from a network failure.
+
+`X-Forwarded-For` and `CF-Connecting-IP` are ignored unless `GOXIO_TRUST_PROXY=1` and the TCP peer is inside `GOXIO_TRUSTED_PROXIES` (comma-separated IPs or CIDRs). A client that is not on that list cannot open a new bucket by sending a documentation address. Behind a trusted proxy, the address used is `CF-Connecting-IP` when that proxy set it, otherwise the rightmost forwarded hop that is not itself a trusted proxy. Two people behind the same proxy therefore do not share one bucket, and an address to the left of the proxy’s own hop does not. `GOXIO_TRUST_PROXY=1` with an empty list does not honor forwarded headers. The CORS `allowed_origins` list is unchanged.
 
 `/health` stays unauthenticated and returns `{"status":"ok"}` for the process probe. It has no tenant data. `/api/health` requires a session and a server id.
 

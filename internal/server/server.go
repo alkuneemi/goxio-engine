@@ -76,9 +76,22 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 	if dataDir == "" {
 		dataDir = "data/portal"
 	}
+	var trusted *portal.TrustedProxies
+	if os.Getenv("GOXIO_TRUST_PROXY") == "1" {
+		parsed, perr := portal.ParseTrustedProxies(os.Getenv("GOXIO_TRUSTED_PROXIES"))
+		if perr != nil {
+			logger.Errorw("trusted proxy list rejected; forwarded client headers will be ignored", "err", perr)
+		} else {
+			trusted = parsed
+			if trusted.Len() == 0 {
+				logger.Warnw("GOXIO_TRUST_PROXY is set without GOXIO_TRUSTED_PROXIES; X-Forwarded-For is ignored so one proxy address is not a bypass")
+			}
+		}
+	}
 	portalStore, err := portal.Open(dataDir, portal.Options{
-		SecureCookies: os.Getenv("GOXIO_COOKIE_SECURE") != "0",
-		TrustProxy:    os.Getenv("GOXIO_TRUST_PROXY") == "1",
+		SecureCookies:  os.Getenv("GOXIO_COOKIE_SECURE") != "0",
+		TrustProxy:     os.Getenv("GOXIO_TRUST_PROXY") == "1",
+		TrustedProxies: trusted,
 	})
 	if err != nil {
 		logger.Errorw("portal store unavailable; map routes will refuse", "err", err)
