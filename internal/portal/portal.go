@@ -184,6 +184,9 @@ func Open(dir string, opt Options) (*Store, error) {
 		byHash: map[string]serverKey{},
 		fails:  map[string][]time.Time{},
 	}
+	if err := s.normalizeAccounts(); err != nil {
+		return nil, err
+	}
 	if err := s.reindex(); err != nil {
 		return nil, err
 	}
@@ -198,25 +201,33 @@ func (s *Store) CreateAccount(login, password string) (Account, error) {
 	if err != nil {
 		return Account{}, err
 	}
-	if len(password) < minPassword {
-		return Account{}, errors.New("password must be at least 12 characters")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, err := s.accountByLogin(login); err == nil {
-		return Account{}, ErrExists
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), s.opt.BcryptCost)
+	password, err = preparePassword(password)
 	if err != nil {
 		return Account{}, err
 	}
-	acct := Account{
-		ID:           "acct_" + randHex(16),
-		Login:        login,
-		PasswordHash: string(hash),
-		CreatedAt:    time.Now().UTC(),
-	}
-	if err := writeJSON(filepath.Join(s.dir, "accounts", acct.ID+".json"), acct); err != nil {
+	var acct Account
+	err = s.withIdentLock(func() error {
+		if _, err := s.accountByLogin(login); err == nil {
+			return ErrExists
+		} else if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if s.emailReservedBySlug(login) {
+			return ErrExists
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), s.opt.BcryptCost)
+		if err != nil {
+			return err
+		}
+		acct = Account{
+			ID:           "acct_" + randHex(16),
+			Login:        login,
+			PasswordHash: string(hash),
+			CreatedAt:    time.Now().UTC(),
+		}
+		return writeJSON(filepath.Join(s.dir, "accounts", acct.ID+".json"), acct)
+	})
+	if err != nil {
 		return Account{}, err
 	}
 	return acct, nil
@@ -234,8 +245,12 @@ func (s *Store) AddAlias(login, alias string) error {
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	return s.withIdentLock(func() error {
+		return s.addAliasLocked(login, alias)
+	})
+}
+
+func (s *Store) addAliasLocked(login, alias string) error {
 	acct, err := s.accountByLogin(login)
 	if err != nil {
 		return ErrNotFound
@@ -294,29 +309,54 @@ func (s *Store) AddServer(accountID, name, address string) (Server, string, erro
 }
 
 func (s *Store) Authenticate(login, password string) (Session, error) {
-	login, err := canonicalLogin(login)
+	cands := passwordCandidates(password)
+	canon, err := canonicalLogin(login)
 	if err != nil {
-		_ = bcrypt.CompareHashAndPassword(s.dummy, []byte(password))
+		s.burn(cands)
 		return Session{}, ErrInvalid
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	acct, err := s.accountByLogin(login)
-	hash := s.dummy
-	if err == nil {
-		hash = []byte(acct.PasswordHash)
-	}
-	if bcrypt.CompareHashAndPassword(hash, []byte(password)) != nil || err != nil {
-		return Session{}, ErrInvalid
-	}
-	sess := Session{
-		ID:        randHex(32),
-		AccountID: acct.ID,
-		CSRF:      randHex(32),
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(s.opt.SessionTTL),
-	}
-	if err := writeJSON(filepath.Join(s.dir, "sessions", sess.ID+".json"), sess); err != nil {
+	var sess Session
+	err = s.withIdentLock(func() error {
+		acct, found := s.accountByLogin(canon)
+		viaSlug := false
+		if found != nil && !errors.Is(found, ErrNotFound) {
+			return found
+		}
+		if found != nil {
+			if slug, ok := s.slugForUnboundEmail(canon); ok {
+				acct = slug
+				viaSlug = true
+				found = nil
+			}
+		}
+		hash := s.dummy
+		if found == nil {
+			hash = []byte(acct.PasswordHash)
+		}
+		if !passwordMatches(hash, cands) || found != nil {
+			return ErrInvalid
+		}
+		if viaSlug {
+			if err := s.attachAlias(acct, canon); err != nil {
+				if errors.Is(err, ErrExists) {
+					return ErrInvalid
+				}
+				return err
+			}
+		}
+		sess = Session{
+			ID:        randHex(32),
+			AccountID: acct.ID,
+			CSRF:      randHex(32),
+			CreatedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(s.opt.SessionTTL),
+		}
+		return writeJSON(filepath.Join(s.dir, "sessions", sess.ID+".json"), sess)
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalid) {
+			return Session{}, ErrInvalid
+		}
 		return Session{}, err
 	}
 	return sess, nil
@@ -665,24 +705,25 @@ func (s *Store) accountByLogin(login string) (Account, error) {
 	if err != nil {
 		return Account{}, err
 	}
+	var matches []Account
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		acct, changed, ok := s.readCanonical(e.Name())
+		if !ok {
 			continue
 		}
-		var acct Account
-		if err := readJSON(filepath.Join(s.dir, "accounts", e.Name()), &acct); err != nil {
-			continue
-		}
-		if acct.Login == canon {
-			return acct, nil
-		}
-		for _, alias := range acct.Aliases {
-			if alias == canon {
-				return acct, nil
+		if changed && !s.canonicalTaken(acct, e.Name()) {
+			if err := writeJSON(filepath.Join(s.dir, "accounts", e.Name()), acct); err != nil {
+				return Account{}, err
 			}
 		}
+		if accountMatches(acct, canon) {
+			matches = append(matches, acct)
+		}
 	}
-	return Account{}, ErrNotFound
+	if len(matches) != 1 {
+		return Account{}, ErrNotFound
+	}
+	return matches[0], nil
 }
 
 // resolveToken finds the server for an ingest-token hash. A miss re-reads the

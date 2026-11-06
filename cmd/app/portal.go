@@ -218,7 +218,10 @@ func openPortal() (*portal.Store, error) {
 }
 
 func readPortalPassword() (string, error) {
-	if p := strings.TrimSpace(os.Getenv("GOXIO_PORTAL_PASSWORD")); p != "" {
+	// CreateAccount applies the paste rules. Do not trim here, or a space that
+	// is inside the secret would still be kept, but the HTTP sign-in path and
+	// the CLI would stop sharing one definition of the ends.
+	if p, ok := os.LookupEnv("GOXIO_PORTAL_PASSWORD"); ok && strings.TrimSpace(p) != "" {
 		return p, nil
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
