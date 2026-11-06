@@ -3,9 +3,11 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GraphCanvas } from './graph';
 import { NodeInspector, SearchOverlay, EdgeInspector } from './panels';
 import HeaderBar, { type LayoutMode } from './HeaderBar';
+import DrillCards from './space/DrillCards';
+import SpaceBar, { type MapView } from './space/SpaceBar';
 import { ErrorBoundary, EmptyState } from './ui';
 import { useWebSocket, useAppShortcuts } from '../hooks';
-import { useGraph as useGraphData } from '../api';
+import { useGraph as useGraphData, useSpaceSummary } from '../api';
 import {
   hasNamespaces,
   applyFilters,
@@ -23,6 +25,7 @@ import {
   NO_COLLAPSE,
   EMPTY_FILTERS,
   LARGE_GRAPH_NODES,
+  ancestorIds,
   type CollapseState,
   type Filters,
 } from '../utils';
@@ -52,9 +55,11 @@ export default function Layout() {
   const [collapseChoice, setCollapseChoice] = useState<CollapseState | null>(() => collapseFromParams(searchParams));
   const [layoutNotice, setLayoutNotice] = useState<{ from: LayoutMode; nodeCount: number } | null>(null);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(
-    () => (localStorage.getItem('graph-layout-mode') as LayoutMode) || 'hierarchical'
+    () => (localStorage.getItem('graph-layout-mode') as LayoutMode) || 'force'
   );
   const [layoutResetKey, setLayoutResetKey] = useState(0);
+  const view: MapView = searchParams.get('view') === 'cards' ? 'cards' : 'map';
+  const [cardStack, setCardStack] = useState<string[]>([]);
 
   // Persist layout mode to localStorage
   const handleLayoutChange = useCallback((mode: LayoutMode) => {
@@ -77,7 +82,25 @@ export default function Layout() {
   }, [setSearchParams]);
 
   const { data: apiGraph, isLoading, error, refetch } = useGraphData();
+  const { data: spaceSummary } = useSpaceSummary();
   const graph: Graph | undefined = apiGraph;
+
+  const setView = useCallback((next: MapView) => {
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      if (next === 'cards') params.set('view', 'cards');
+      else params.delete('view');
+      return params;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const openCardsAt = useCallback((nodeId: string | null) => {
+    if (!graph || !nodeId) {
+      setCardStack([]);
+      return;
+    }
+    setCardStack(ancestorIds(graph, nodeId));
+  }, [graph]);
 
   const nodeCount = graph?.nodes?.length ?? 0;
   const isLargeGraph = nodeCount > LARGE_GRAPH_NODES;
@@ -199,7 +222,7 @@ export default function Layout() {
 
   // Filter, then collapse, for the canvas; NodeInspector keeps the full graph.
   const filteredGraph = useMemo(() => (graph?.nodes ? applyFilters(graph, filters) : undefined), [graph, filters]);
-  const view = useMemo(
+  const viewGraph = useMemo(
     () => (filteredGraph ? collapseNamespaces(filteredGraph, collapse) : undefined),
     [filteredGraph, collapse],
   );
@@ -241,7 +264,19 @@ export default function Layout() {
         isLargeGraph={isLargeGraph}
       />
 
-      <div className={styles.graphArea}>
+      <SpaceBar
+        graph={graph}
+        summary={spaceSummary}
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        view={view}
+        onView={(next) => {
+          if (next === 'cards') openCardsAt(selectedNodeId);
+          setView(next);
+        }}
+      />
+
+      <div className={`${styles.graphArea} ${styles.graphAreaWithSpace}`}>
         <ErrorBoundary>
           {isFilteredEmpty ? (
             <EmptyState
@@ -249,10 +284,17 @@ export default function Layout() {
               filterCount={activeFilterCount}
               onClearFilters={handleClearFilters}
             />
+          ) : view === 'cards' ? (
+            <DrillCards
+              graph={filteredGraph}
+              stack={cardStack}
+              onStack={setCardStack}
+              onSelect={handleNodeSelect}
+            />
           ) : (
             <GraphCanvas
-              graph={view?.graph}
-              namespaces={view?.namespaces}
+              graph={viewGraph?.graph}
+              namespaces={viewGraph?.namespaces}
               onToggleCollapse={handleToggleCollapse}
               fitKey={fitKey}
               selectedNodeId={selectedNodeId}

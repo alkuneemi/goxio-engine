@@ -207,6 +207,39 @@ const NODE_ICONS: Record<NodeType, React.ReactElement> = {
         <circle cx="12" cy="12" r="3" />
       </svg>
     ),
+    disk: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <ellipse cx="12" cy="7" rx="8" ry="3" />
+        <path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7" />
+        <circle cx="12" cy="7" r="1.5" />
+      </svg>
+    ),
+    volume: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M4 7h16v12H4z" />
+        <path d="M4 11h16M8 7V5h8v2" />
+      </svg>
+    ),
+    container: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="3" y="7" width="18" height="12" rx="1" />
+        <path d="M3 12h18M8 7v12M16 7v12" />
+      </svg>
+    ),
+    repo: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <circle cx="7" cy="7" r="2.5" />
+        <circle cx="17" cy="7" r="2.5" />
+        <circle cx="12" cy="17" r="2.5" />
+        <path d="M9 8.5l2.2 6M15 8.5l-2.2 6" />
+      </svg>
+    ),
+    github_account: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <circle cx="12" cy="8" r="3" />
+        <path d="M5 19c1.5-3 3.8-4.5 7-4.5S17.5 16 19 19" />
+      </svg>
+    ),
 };
 
 const TYPE_CATEGORY: Record<NodeType, string> = {
@@ -233,6 +266,11 @@ const TYPE_CATEGORY: Record<NodeType, string> = {
   daemonset: 'k8s',
   pod: 'k8s',
   k8s_service: 'k8s',
+  disk: 'space',
+  volume: 'storage',
+  container: 'service',
+  repo: 'gateway',
+  github_account: 'infra',
 };
 
 const NodeIcon = ({ type }: { type: NodeType }) => {

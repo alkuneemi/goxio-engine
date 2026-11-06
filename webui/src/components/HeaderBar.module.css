@@ -635,6 +635,14 @@
   letter-spacing: -0.03em;
 }
 
+.brandGo {
+  color: #00D4C8;
+}
+
+.brandXio {
+  color: #ffffff;
+}
+
 .sourceLink {
   margin-inline-start: var(--space-2);
   font-size: var(--text-xs);

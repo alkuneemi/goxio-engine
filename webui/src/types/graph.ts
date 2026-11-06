@@ -23,7 +23,14 @@ export type NodeType =
   | 'statefulset'
   | 'daemonset'
   | 'pod'
-  | 'k8s_service';
+  | 'k8s_service'
+  | 'disk'
+  | 'volume'
+  | 'container'
+  | 'repo'
+  | 'github_account';
+
+export type SpaceActivity = 'daily' | 'intermittent' | 'idle' | 'core';
 
 // Priority tiers for visual hierarchy
 export type PriorityTier = 'critical' | 'high' | 'medium' | 'low';

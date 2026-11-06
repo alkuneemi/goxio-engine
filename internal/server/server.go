@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,6 +15,7 @@ import (
 	"github.com/guilherme-grimm/graph-go/internal/discovery"
 	"github.com/guilherme-grimm/graph-go/internal/graph/edges"
 	"github.com/guilherme-grimm/graph-go/internal/graph/nodes"
+	"github.com/guilherme-grimm/graph-go/internal/portal"
 )
 
 type Server struct {
@@ -21,6 +23,8 @@ type Server struct {
 	allowedOrigins []string
 	registry       adapters.Registry
 	logger         *zap.SugaredLogger
+	portal         *portal.Store
+	oidc           *oidcRuntime
 }
 
 // NewServer returns the HTTP server and a cleanup function that should
@@ -66,11 +70,45 @@ func NewServer(cfg *config.Config, logger *zap.SugaredLogger, cat adapters.Catal
 
 	watchCancel := startWatchers(discoverers, svcSync, logger)
 
+	// Tenant maps come only from ingested snapshots. The process does not
+	// scan this host into a customer view, and it does not fall back to the
+	// demo snapshot when a tenant has no inventory.
+	dataDir := os.Getenv("GOXIO_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "data/portal"
+	}
+	var trusted *portal.TrustedProxies
+	if os.Getenv("GOXIO_TRUST_PROXY") == "1" {
+		parsed, perr := portal.ParseTrustedProxies(os.Getenv("GOXIO_TRUSTED_PROXIES"))
+		if perr != nil {
+			logger.Errorw("trusted proxy list rejected; forwarded client headers will be ignored", "err", perr)
+		} else {
+			trusted = parsed
+			if trusted.Len() == 0 {
+				logger.Warnw("GOXIO_TRUST_PROXY is set without GOXIO_TRUSTED_PROXIES; X-Forwarded-For is ignored so one proxy address is not a bypass")
+			}
+		}
+	}
+	portalStore, err := portal.Open(dataDir, portal.Options{
+		SecureCookies:  os.Getenv("GOXIO_COOKIE_SECURE") != "0",
+		TrustProxy:     os.Getenv("GOXIO_TRUST_PROXY") == "1",
+		TrustedProxies: trusted,
+	})
+	if err != nil {
+		logger.Errorw("portal store unavailable; map routes will refuse", "err", err)
+	}
+
+	var oidc *oidcRuntime
+	if cfg, ok := oidcConfigFromEnv(); ok {
+		oidc = newOIDC(cfg)
+	}
 	s := &Server{
 		port:           port,
 		allowedOrigins: allowedOrigins,
 		registry:       reg,
 		logger:         logger,
+		portal:         portalStore,
+		oidc:           oidc,
 	}
 
 	server := &http.Server{

@@ -203,6 +203,25 @@ Kubernetes-discovered (topology):
 
 ---
 
+## Space map
+
+GoXIO adds a read-only space hierarchy on top of the discovered graph. Vocabulary:
+
+- **Disk** — a real filesystem from `df` (virtual mounts skipped).
+- **Volume** — a Docker volume or a bind-mounted folder.
+- **Container** — a Docker container that consumes a volume.
+- **Database** — a datastore inside a container (image or `POSTGRES_DB` / `MYSQL_DATABASE` / `MONGO_INITDB_DATABASE` only; passwords are not copied).
+- **Repo** — a GitHub repository a container was deployed from (`goxio.repo` or `org.opencontainers.image.source`).
+- **GitHub account** — the owner of a repo. Accounts are GitHub logins only.
+- **Activity** — `daily`, `intermittent`, `idle`, or `core`. Core (platform datastores and `goxio.core`) is never deleted or archived.
+- **Unused** — an orphan volume, stopped non-core container, or repo with nothing deployed.
+
+Edges: `contains` (disk → volume → container → database), `owns` (account → repo), `deploys_from` (repo → container).
+
+`GET /api/graph` merges this snapshot with discovery. `GET /api/space` is the snapshot summary. `POST /api/space/ingest` accepts a collector payload (optional `GOXIO_INGEST_TOKEN`). `POST /api/space/actions` requires the confirm word `DELETE`, `ARCHIVE`, or `TRANSFER` and never runs a host write.
+
+`GOXIO_SPACE_SOURCE` is `auto` (host when it has space, otherwise the demo snapshot), `host`, or `demo`.
+
 ## Adding to the system
 
 - **New adapter**: `internal/adapters/{name}/` → implement `Adapter` → integration test with `adaptertest.RunContractTests` → add one entry to `catalog.Default()` → node type in `nodes.go` → frontend type + icon.

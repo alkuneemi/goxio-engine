@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useApplyHealthBatch, queryKeys } from '../api';
+import { useApplyHealthBatch, queryKeys, portalServerId } from '../api';
 import type { WebSocketMessage, HealthBatchPayload } from '../types';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -45,12 +45,17 @@ export function useWebSocket() {
   // Reconnect timers call through this ref so connect can schedule itself.
   const connectRef = useRef<() => void>(() => {});
   const connect = useCallback(() => {
+    const serverId = portalServerId();
+    if (!serverId) {
+      setStatus('disconnected');
+      return;
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     isDisconnectingRef.current = false;
 
     try {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(`${WS_URL}?server=${encodeURIComponent(serverId)}`);
 
       ws.onopen = () => {
         setStatus('connected');

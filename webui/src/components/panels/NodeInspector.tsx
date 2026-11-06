@@ -1,8 +1,9 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { Panel } from '../ui';
 import { useNodeFromGraph } from '../../api';
-import { calculatePriority, countConnections } from '../../utils';
+import { calculatePriority, countConnections, isCoreSpace, isSpaceNode, nodeActivity, nodeSizeLabel, pressureValue } from '../../utils';
 import type { Graph, HealthStatus, PriorityTier } from '../../types';
+import ActionModal, { type SpaceActionName } from '../space/ActionModal';
 import styles from './NodeInspector.module.css';
 
 interface NodeInspectorProps {
@@ -29,6 +30,8 @@ const priorityLabels: Record<PriorityTier, string> = {
 export default function NodeInspector({ nodeId, onClose, graph, onNodeSelect }: NodeInspectorProps) {
   const node = useNodeFromGraph(nodeId);
   const [copied, setCopied] = useState(false);
+  const [action, setAction] = useState<SpaceActionName | null>(null);
+  useEffect(() => { setAction(null); }, [nodeId]);
 
   const handleCopyId = useCallback(() => {
     if (!node) return;
@@ -133,6 +136,10 @@ export default function NodeInspector({ nodeId, onClose, graph, onNodeSelect }: 
               )}
             </section>
 
+            {isSpaceNode(node) && (
+              <SpaceFacts node={node} graph={graph} onNodeSelect={onNodeSelect} onAction={setAction} />
+            )}
+
             {Object.keys(node.metadata).filter(k => k !== 'priority').length > 0 && (
               <section className={styles.section}>
                 <h3 className={styles.sectionTitle}>
@@ -217,7 +224,118 @@ export default function NodeInspector({ nodeId, onClose, graph, onNodeSelect }: 
           </div>
         </div>
       )}
+      {node && action && (
+        <ActionModal node={node} graph={graph} action={action} onClose={() => setAction(null)} />
+      )}
     </Panel>
+  );
+}
+
+const PRESSURE_KEYS = [
+  ['disk_pressure', 'Disk'],
+  ['cpu_pressure', 'CPU'],
+  ['ram_pressure', 'RAM'],
+  ['io_pressure', 'IO'],
+] as const;
+
+function SpaceFacts({
+  node, graph, onNodeSelect, onAction,
+}: {
+  node: NonNullable<ReturnType<typeof useNodeFromGraph>>;
+  graph?: Graph;
+  onNodeSelect?: (nodeId: string) => void;
+  onAction: (action: SpaceActionName) => void;
+}) {
+  const activity = nodeActivity(node);
+  const size = nodeSizeLabel(node);
+  const containers = Array.isArray(node.metadata.containers) ? node.metadata.containers.map(String) : [];
+  const repoId = typeof node.metadata.repo === 'string' ? node.metadata.repo : '';
+  const repoName = typeof node.metadata.repo_name === 'string' ? node.metadata.repo_name : repoId;
+  const account = typeof node.metadata.github_account === 'string' ? node.metadata.github_account : '';
+  const path = typeof node.metadata.path === 'string' ? node.metadata.path : '';
+  const server = typeof node.metadata.server === 'string' ? node.metadata.server : '';
+  const state = typeof node.metadata.state === 'string' ? node.metadata.state : '';
+  const note = typeof node.metadata.action_note === 'string' ? node.metadata.action_note : '';
+  const blocked = isCoreSpace(node) || node.type === 'disk' || node.type === 'github_account';
+  const blockReason = node.type === 'disk'
+    ? 'Disks stay on the map'
+    : node.type === 'github_account'
+      ? 'GitHub accounts are not removed from the map'
+      : 'Core spaces are never deleted or archived';
+  const accountNode = graph?.nodes.find(n => n.type === 'github_account' && (n.name === account || n.id === account));
+  const repoNode = graph?.nodes.find(n => n.id === repoId || (n.type === 'repo' && n.name === repoName));
+  const pressures = PRESSURE_KEYS
+    .map(([key, label]) => ({ key, label, value: pressureValue(node, key) }))
+    .filter(p => p.value !== null);
+
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.sectionTitle}>Space</h3>
+      <dl className={styles.metaList}>
+        <Fact k="Type" v={node.type} />
+        <Fact k="Path" v={path || '—'} />
+        <Fact k="Size" v={size || '—'} />
+        <Fact k="Activity" v={activity || '—'} />
+        <Fact k="Cleanable" v={node.metadata.cleanable === true ? 'Yes' : 'No'} />
+        <Fact k="Unused" v={node.metadata.unused === true ? 'Yes' : 'No'} />
+        <Fact k="Server" v={server || '—'} />
+        <Fact k="Provenance" v={typeof node.metadata.provenance === 'string' ? node.metadata.provenance : '—'} />
+        <Fact k="Size state" v={typeof node.metadata.size_state === 'string' ? node.metadata.size_state : '—'} />
+        <Fact k="Device group" v={typeof node.metadata.device_group === 'string' ? node.metadata.device_group : '—'} />
+        {node.metadata.overlaps_parent === true && <Fact k="Accounting" v="Included in the parent filesystem, not a second copy" />}
+        {typeof node.metadata.inspect_state === 'string' && <Fact k="Inspect" v={node.metadata.inspect_state} />}
+        {state && <Fact k="State" v={state} />}
+        <div className={styles.metaItem}>
+          <dt className={styles.metaKey}>Containers</dt>
+          <dd className={styles.metaValue}>{containers.length ? containers.join(', ') : '—'}</dd>
+        </div>
+        <div className={styles.metaItem}>
+          <dt className={styles.metaKey}>Repo</dt>
+          <dd className={styles.metaValue}>
+            {repoNode ? (
+              <button type="button" className={styles.connectionLink} onClick={() => onNodeSelect?.(repoNode.id)}>{repoName || repoNode.name}</button>
+            ) : (repoName || '—')}
+          </dd>
+        </div>
+        <div className={styles.metaItem}>
+          <dt className={styles.metaKey}>GitHub account</dt>
+          <dd className={styles.metaValue}>
+            {accountNode ? (
+              <button type="button" className={styles.connectionLink} onClick={() => onNodeSelect?.(accountNode.id)}>{account}</button>
+            ) : (account || '—')}
+          </dd>
+        </div>
+      </dl>
+      {pressures.length > 0 ? (
+        <div className={styles.pressures}>
+          {pressures.map(p => (
+            <div key={p.key} className={styles.pressure}>
+              <span>{p.label} {Math.round((p.value ?? 0) * 100)}%</span>
+              <span className={styles.pressureTrack}>
+                <span style={{ width: `${Math.max(0, Math.min(100, (p.value ?? 0) * 100))}%` }} />
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className={styles.placeholder}>Disk, CPU, RAM, and IO pressure were not reported.</p>
+      )}
+      {note && <p className={styles.placeholder}>{note}</p>}
+      <div className={styles.actions}>
+        <button type="button" disabled={blocked} title={blocked ? blockReason : 'Record a delete'} onClick={() => onAction('delete')}>Delete</button>
+        <button type="button" disabled={blocked} title={blocked ? blockReason : 'Record an archive'} onClick={() => onAction('archive')}>Archive</button>
+        <button type="button" onClick={() => onAction('transfer')}>Transfer</button>
+      </div>
+    </section>
+  );
+}
+
+function Fact({ k, v }: { k: string; v: string }) {
+  return (
+    <div className={styles.metaItem}>
+      <dt className={styles.metaKey}>{k}</dt>
+      <dd className={styles.metaValue}>{v}</dd>
+    </div>
   );
 }
 

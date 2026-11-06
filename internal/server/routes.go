@@ -25,9 +25,23 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.HandleFunc("/health", s.healthHandler)
 
 	// API routes
+	r.HandleFunc("/api/portal/login", s.portalLoginHandler).Methods("POST")
+	r.HandleFunc("/api/portal/oidc", s.portalOIDCInfo).Methods("GET")
+	r.HandleFunc("/api/portal/oidc/start", s.portalOIDCStart).Methods("GET")
+	r.HandleFunc("/api/portal/oidc/link", s.portalOIDCLink).Methods("POST")
+	r.HandleFunc("/api/portal/oidc/callback", s.portalOIDCCallback).Methods("GET")
+	r.HandleFunc("/api/portal/register", s.portalRegisterHandler).Methods("POST")
+	r.HandleFunc("/api/portal/logout", s.portalLogoutHandler).Methods("POST")
+	r.HandleFunc("/api/portal/me", s.portalMeHandler).Methods("GET")
+	r.HandleFunc("/api/portal/servers", s.portalServersHandler).Methods("GET")
+	r.HandleFunc("/api/portal/servers/{id}/refresh", s.portalRefreshHandler).Methods("POST")
 	r.HandleFunc("/api/graph", s.graphHandler).Methods("GET")
 	r.HandleFunc("/api/node/{id}", s.nodeHandler).Methods("GET")
 	r.HandleFunc("/api/health", s.apiHealthHandler).Methods("GET")
+	r.HandleFunc("/api/space", s.spaceSummaryHandler).Methods("GET")
+	r.HandleFunc("/api/space/actions", s.spaceActionsHandler).Methods("GET")
+	r.HandleFunc("/api/space/actions", s.spaceActionHandler).Methods("POST")
+	r.HandleFunc("/api/space/ingest", s.spaceIngestHandler).Methods("POST")
 
 	r.HandleFunc("/websocket", s.websocketHandler)
 
@@ -101,26 +115,45 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) graphHandler(w http.ResponseWriter, r *http.Request) {
-	g, err := s.registry.DiscoverAll()
-	if err != nil {
-		s.logger.Errorw("graphHandler discover failed", "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	sess, ok := s.requireSession(w, r)
+	if !ok {
 		return
 	}
-
+	srv, ok := s.requireServer(w, r, sess)
+	if !ok {
+		return
+	}
+	g, meta, err := s.portal.Graph(sess.AccountID, srv.ID)
+	if err != nil {
+		s.logger.Errorw("graphHandler failed", "err", err)
+		writeAPIError(w, http.StatusNotFound, "not found")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{"data": g}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]any{"data": g, "meta": meta}); err != nil {
 		s.logger.Errorw("graphHandler encode failed", "err", err)
 	}
 }
 
 func (s *Server) nodeHandler(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	srv, ok := s.requireServer(w, r, sess)
+	if !ok {
+		return
+	}
 	id := mux.Vars(r)["id"]
+	if strings.Contains(id, "..") || strings.ContainsAny(id, "/\\") {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
 
-	g, err := s.registry.DiscoverAll()
+	g, _, err := s.portal.Graph(sess.AccountID, srv.ID)
 	if err != nil {
-		s.logger.Errorw("nodeHandler discover failed", "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		s.logger.Errorw("nodeHandler failed", "err", err)
+		http.Error(w, "node not found", http.StatusNotFound)
 		return
 	}
 
@@ -138,19 +171,25 @@ func (s *Server) nodeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiHealthHandler(w http.ResponseWriter, r *http.Request) {
-	status := "ok"
-
-	metrics := s.registry.HealthAll()
-	for _, m := range metrics {
-		if m.Status == health.Unhealthy {
-			status = "error"
-			break
-		}
-		if m.Status == health.Degraded {
-			status = "degraded"
-		}
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
 	}
-
+	srv, ok := s.requireServer(w, r, sess)
+	if !ok {
+		return
+	}
+	_, meta, err := s.portal.Graph(sess.AccountID, srv.ID)
+	if err != nil {
+		writeAPIError(w, http.StatusNotFound, "not found")
+		return
+	}
+	status := "ok"
+	if meta.Status == "pending" {
+		status = "pending"
+	} else if meta.Partial || !meta.Complete {
+		status = "partial"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{
 		"status":    status,
@@ -161,6 +200,14 @@ func (s *Server) apiHealthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	srv, ok := s.requireServer(w, r, sess)
+	if !ok {
+		return
+	}
 	patterns := wsPatterns(s.allowedOrigins)
 
 	socket, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -192,9 +239,12 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		// Get the current graph to map adapter health to actual node IDs
-		g, err := s.registry.DiscoverAll()
+		if _, err := s.portal.LookupSession(sess.ID); err != nil {
+			return
+		}
+		g, _, err := s.portal.Graph(sess.AccountID, srv.ID)
 		if err != nil {
-			s.logger.Warnw("websocket discover failed", "err", err)
+			s.logger.Warnw("websocket graph failed", "err", err)
 		}
 
 		if g != nil {
@@ -211,7 +261,7 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 			// Ship only the health values that changed since the last tick, in
 			// one message. Per-node messages meant thousands of frames (and
 			// thousands of client re-renders) every tick on large clusters.
-			current := NodeHealths(g, s.registry.HealthAll())
+			current := NodeHealths(g, nil)
 			base := prevHealth
 			if resendFull {
 				base = nil

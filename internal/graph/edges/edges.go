@@ -7,6 +7,12 @@ const (
 	// TypeRoutesTo represents a Kubernetes Service → Pod routing edge,
 	// resolved via label-selector matching at discovery time.
 	TypeRoutesTo = "routes_to"
+
+	// Space-map relationships. Contains follows disk → volume → container →
+	// database. Owns is a GitHub account → repo. DeploysFrom is a repo → container.
+	TypeContains    = "contains"
+	TypeOwns        = "owns"
+	TypeDeploysFrom = "deploys_from"
 )
 
 // Connection and boundary data
