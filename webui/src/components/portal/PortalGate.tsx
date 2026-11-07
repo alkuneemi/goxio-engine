@@ -3,13 +3,37 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api, portalFailure, setPortalSession } from '../../api';
 import type { PortalServer } from '../../types';
 import styles from './PortalGate.module.css';
+import {
+  applyPortalLang,
+  portalCopy,
+  readPortalLang,
+  ssoErrorText,
+  type PortalLang,
+} from './portalCopy';
 
 interface PortalGateProps {
   children: ReactNode;
 }
 
+function EyeIcon({ hidden }: { hidden: boolean }) {
+  if (hidden) {
+    return (
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.5 10.7A3 3 0 0013.3 13.5M9.9 5.2A10.8 10.8 0 0121 12a10.8 10.8 0 01-2.2 3.1M6.2 6.2A10.8 10.8 0 003 12a10.8 10.8 0 0014.7 6.3" />
+    </svg>
+  );
+}
+
 export default function PortalGate({ children }: PortalGateProps) {
   const queryClient = useQueryClient();
+  const [lang, setLang] = useState<PortalLang>('ar');
   const [phase, setPhase] = useState<'checking' | 'login' | 'servers' | 'pending' | 'map'>('checking');
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [login, setLogin] = useState('');
@@ -20,10 +44,25 @@ export default function PortalGate({ children }: PortalGateProps) {
   const [ssoConfigured, setSsoConfigured] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const [error, setError] = useState('');
+  const [ssoCode, setSsoCode] = useState('');
   const [csrf, setCsrf] = useState('');
   const [servers, setServers] = useState<PortalServer[]>([]);
   const [current, setCurrent] = useState<PortalServer | null>(null);
   const [pendingNote, setPendingNote] = useState('');
+
+  const t = portalCopy(lang);
+
+  useEffect(() => {
+    const next = readPortalLang();
+    setLang(next);
+    applyPortalLang(next);
+  }, []);
+
+  const switchLang = () => {
+    const next: PortalLang = lang === 'ar' ? 'en' : 'ar';
+    setLang(next);
+    applyPortalLang(next);
+  };
 
   const loadServers = async (token: string) => {
     setPortalSession('', token);
@@ -34,12 +73,8 @@ export default function PortalGate({ children }: PortalGateProps) {
 
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('sso_error');
-    if (code === 'unavailable') {
-      setError('تعذر الوصول إلى خدمة هوية أومكسيو. استخدم دخول GoXIO أو أعد المحاولة. لم تُفتح جلسة. Omxio sign-in is unavailable. Use your GoXIO login or try again. No session was opened.');
-    } else if (code === 'rejected') {
-      setError('رفضت خدمة أومكسيو هذا الدخول. لم تُفتح جلسة ولم يُربط حساب. Omxio rejected this sign-in. No session was opened and no account was linked.');
-    } else if (code === 'unconfigured') {
-      setError('الدخول بحساب أومكسيو غير مُعد على هذا الخادم. لم تُفتح جلسة. Omxio sign-in is not configured on this server. No session was opened.');
+    if (code === 'unavailable' || code === 'rejected' || code === 'unconfigured') {
+      setSsoCode(code);
     }
     if (code) window.history.replaceState(null, '', window.location.pathname);
     api.oidc().then(res => setSsoConfigured(res.data.configured)).catch(() => setSsoConfigured(false));
@@ -57,9 +92,12 @@ export default function PortalGate({ children }: PortalGateProps) {
     return () => { cancelled = true; };
   }, []);
 
+  const formError = error || (ssoCode ? ssoErrorText(ssoCode, lang) : '');
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSsoCode('');
     setBusy(true);
     try {
       const res = await api.login(login.trim(), password);
@@ -67,7 +105,7 @@ export default function PortalGate({ children }: PortalGateProps) {
       setCsrf(res.data.csrf);
       await loadServers(res.data.csrf);
     } catch (err) {
-      setError(portalFailure(err));
+      setError(portalFailure(err, lang));
     } finally {
       setBusy(false);
     }
@@ -76,6 +114,7 @@ export default function PortalGate({ children }: PortalGateProps) {
   const submitSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSsoCode('');
     setBusy(true);
     try {
       const res = await api.register(login.trim(), password, confirm);
@@ -86,7 +125,7 @@ export default function PortalGate({ children }: PortalGateProps) {
       setPortalSession('', res.data.csrf);
       setPhase('servers');
     } catch (err) {
-      setError(portalFailure(err));
+      setError(portalFailure(err, lang));
     } finally {
       setBusy(false);
     }
@@ -94,15 +133,9 @@ export default function PortalGate({ children }: PortalGateProps) {
 
   const secretWarnings = (() => {
     const notes: string[] = [];
-    if (password.length > 0 && password !== password.trim()) {
-      notes.push('هناك مسافة في طرف كلمة المرور ولن تُحذف. A space at the end or start is part of the password and is not removed.');
-    }
-    if (confirm.length > 0 && confirm !== confirm.trim()) {
-      notes.push('هناك مسافة في طرف التأكيد ولن تُحذف. A space on the confirmation is kept.');
-    }
-    if (capsLock) {
-      notes.push('مفتاح الأحرف الكبيرة يعمل. الحرف الكبير يُحسب. Caps Lock is on. Capitals count.');
-    }
+    if (password.length > 0 && password !== password.trim()) notes.push(t.spacePw);
+    if (confirm.length > 0 && confirm !== confirm.trim()) notes.push(t.spaceConfirm);
+    if (capsLock) notes.push(t.caps);
     return notes;
   })();
   const onSecretKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -144,105 +177,106 @@ export default function PortalGate({ children }: PortalGateProps) {
   };
 
   if (phase === 'checking') {
-    return <p className={styles.center}>Checking session…</p>;
+    return <p className={styles.center}>{t.checking}</p>;
   }
 
   if (phase === 'login') {
     const signup = mode === 'signup';
     return (
       <div className={styles.gate}>
-      <form className={styles.card} dir="rtl" lang="ar" onSubmit={signup ? submitSignup : submit}>
-        <h1 dir="ltr"><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
-        {signup ? (
-          <>
-            <p>إنشاء حساب جديد وفارغ. لا يرى خوادم أي حساب آخر، ولا يطلب مفتاح SSH.</p>
-            <p dir="ltr">A new account starts empty. It cannot see another account’s servers, and it does not ask for an SSH key.</p>
-          </>
-        ) : (
-          <>
-            <p>تسجيل الدخول إلى خوادمك. هذا حساب GoXIO، وليس منتجًا آخر.</p>
-            <p dir="ltr">Sign in to your servers. This is the GoXIO portal, not another product.</p>
-          </>
-        )}
-        <label>
-          <span>البريد أو اسم الدخول</span>
-          <span className={styles.hint} dir="ltr">Email or login name</span>
-          <input value={login} onChange={e => setLogin(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" required />
-        </label>
-        <label>
-          <span>كلمة المرور</span>
-          <span className={styles.hint} dir="ltr">{signup ? 'Password, at least 12 characters' : 'Password'}</span>
-          <span className={styles.secret}>
+        <button type="button" className={styles.lang} onClick={switchLang}>
+          {t.langOther}
+        </button>
+        <form className={styles.card} onSubmit={signup ? submitSignup : submit}>
+          <div className={styles.brand}>
+            <img className={styles.logo} src="/omxio-icon.png" width={72} height={72} alt="" />
+            <p className={styles.wm} translate="no"><b className={styles.wmo}>O</b>mxio</p>
+            <p className={styles.product}>{t.productBy}</p>
+          </div>
+          <h1 className={styles.title}>{signup ? t.titleSignup : t.titleLogin}</h1>
+          <label className={styles.field}>
+            <span>{t.email}</span>
             <input
-              type={showSecret ? 'text' : 'password'}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyUp={onSecretKey}
-              onKeyDown={onSecretKey}
-              autoComplete={signup ? 'new-password' : 'current-password'}
+              value={login}
+              onChange={e => setLogin(e.target.value)}
+              autoComplete="username"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              enterKeyHint={signup ? 'next' : 'go'}
-              required
-            />
-            <button type="button" className={styles.peek} onClick={() => setShowSecret(v => !v)}>
-              {showSecret ? 'إخفاء · Hide' : 'إظهار · Show'}
-            </button>
-          </span>
-        </label>
-        {signup && (
-          <label>
-            <span>تأكيد كلمة المرور</span>
-            <span className={styles.hint} dir="ltr">Confirm password</span>
-            <input
-              type={showSecret ? 'text' : 'password'}
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              onKeyUp={onSecretKey}
-              onKeyDown={onSecretKey}
-              autoComplete="new-password"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="go"
+              enterKeyHint="next"
+              inputMode="email"
               required
             />
           </label>
-        )}
-        {secretWarnings.map(note => <p key={note} className={styles.warn} dir="ltr">{note}</p>)}
-        <div className={styles.help}>
-          {signup ? (
+          <label className={styles.field}>
+            <span>{t.password}</span>
+            {signup && <small className={styles.hint}>{t.passwordHint}</small>}
+            <span className={styles.secret}>
+              <input
+                type={showSecret ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyUp={onSecretKey}
+                onKeyDown={onSecretKey}
+                autoComplete={signup ? 'new-password' : 'current-password'}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint={signup ? 'next' : 'go'}
+                required
+              />
+              <button
+                type="button"
+                className={styles.peek}
+                onClick={() => setShowSecret(v => !v)}
+                aria-label={showSecret ? t.hidePassword : t.showPassword}
+              >
+                <EyeIcon hidden={!showSecret} />
+              </button>
+            </span>
+          </label>
+          {signup && (
+            <label className={styles.field}>
+              <span>{t.confirm}</span>
+              <input
+                type={showSecret ? 'text' : 'password'}
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                onKeyUp={onSecretKey}
+                onKeyDown={onSecretKey}
+                autoComplete="new-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="go"
+                required
+              />
+            </label>
+          )}
+          {secretWarnings.map(note => <p key={note} className={styles.warn}>{note}</p>)}
+          {formError && <p className={styles.err} role="alert">{formError}</p>}
+          <button type="submit" className={styles.primary} disabled={busy}>
+            {signup ? t.submitSignup : t.submitLogin}
+          </button>
+          {ssoConfigured && (
             <>
-              <p>الحساب لا يُربط بحساب موجود. إن كان الدخول مستخدمًا تُرفض المحاولة ولا تُفتح جلسة. لا يُرسل بريد.</p>
-              <p dir="ltr">The account is not linked to an existing one. If the login is taken, nothing is opened. No email is sent.</p>
-            </>
-          ) : (
-            <>
-              <p>إن رُفض الدخول لا تُفتح جلسة. كلمة المرور تُرسل كما هي، والمسافة وحالة الأحرف جزء منها. لا يُرسل بريد لإعادة التعيين.</p>
-              <p dir="ltr">A rejected sign-in opens no session. The password is sent unchanged. Spaces and capitals count. GoXIO does not email a reset.</p>
+              <div className={styles.divider} role="separator"><span>{t.or}</span></div>
+              <a className={styles.secondary} href="/api/portal/oidc/start">{t.oidc}</a>
             </>
           )}
-        </div>
-        {error && <p className={styles.err} role="alert">{error}</p>}
-        <button type="submit" disabled={busy}>{signup ? <><bdi>إنشاء الحساب</bdi> · <bdi dir="ltr">Create account</bdi></> : <><bdi>دخول</bdi> · <bdi dir="ltr">Sign in</bdi></>}</button>
-        {ssoConfigured ? (
-          <a className={styles.link} href="/api/portal/oidc/start">الدخول بحساب أومكسيو</a>
-        ) : (
-          <button type="button" className={styles.link} onClick={() => setError('الدخول بحساب أومكسيو غير مُعد على هذا الخادم. لم تُفتح جلسة. Omxio sign-in is not configured on this server. No session was opened.')}>
-            الدخول بحساب أومكسيو
+          <button
+            type="button"
+            className={styles.footer}
+            disabled={busy}
+            onClick={() => { setMode(signup ? 'login' : 'signup'); setError(''); setSsoCode(''); setConfirm(''); }}
+          >
+            {signup ? (
+              <>{t.toLoginPrefix} <span>{t.toLoginAction}</span></>
+            ) : (
+              <>{t.toSignupPrefix} <span>{t.toSignupAction}</span></>
+            )}
           </button>
-        )}
-        <p className={styles.hint} dir="ltr">Omxio sign-in uses that service. GoXIO does not receive the Omxio password.</p>
-        <button
-          type="button"
-          className={styles.link}
-          disabled={busy}
-          onClick={() => { setMode(signup ? 'login' : 'signup'); setError(''); setConfirm(''); }}
-        >
-          {signup ? <><bdi>لديك حساب؟ تسجيل الدخول</bdi> · <bdi dir="ltr">Sign in</bdi></> : <><bdi>إنشاء حساب</bdi> · <bdi dir="ltr">Create an account</bdi></>}
-        </button>
-      </form>
+        </form>
       </div>
     );
   }
