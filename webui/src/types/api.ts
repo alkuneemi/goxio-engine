@@ -17,6 +17,8 @@ export interface PortalServer {
   partial: boolean;
   complete: boolean;
   detail?: string;
+  ssh_public_key?: string;
+  ssh_fingerprint?: string;
 }
 
 export interface SpaceSummary {

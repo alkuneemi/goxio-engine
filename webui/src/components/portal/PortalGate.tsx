@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api, portalFailure, setPortalSession } from '../../api';
 import type { PortalServer } from '../../types';
 import styles from './PortalGate.module.css';
+import ServerSSHKey from './ServerSSHKey';
 import {
   applyPortalLang,
   portalCopy,
@@ -284,45 +285,52 @@ export default function PortalGate({ children }: PortalGateProps) {
   if (phase === 'servers' || phase === 'pending') {
     return (
       <div className={styles.gate}>
-      <div className={styles.card} dir="rtl" lang="ar">
-        <h1 dir="ltr"><span className={styles.go}>Go</span><span className={styles.xio}>XIO</span></h1>
-        <p>خوادمك فقط. الخادم الفارغ يبقى قيد التجهيز، بلا خريطة تجريبية وبلا جرد حساب آخر.</p>
-        <p dir="ltr">Your servers only. An empty server stays pending. There is no demo map and no other account’s inventory.</p>
-        {servers.length === 0 && (
-          <>
-            <p>لا توجد خوادم في هذا الحساب. الخريطة فارغة ولم يُنسخ أي جرد.</p>
-            <p dir="ltr">This account has no servers. The map is empty and no inventory was copied.</p>
-          </>
-        )}
-        <ul className={styles.list}>
-          {servers.map(srv => (
-            <li key={srv.id}>
-              <button type="button" onClick={() => openServer(srv)}>
-                <strong>{srv.name}</strong>
-                <span>{srv.address}</span>
-                <span>{srv.status}{srv.partial ? ' · partial' : ''}{srv.complete ? '' : srv.status === 'ready' ? ' · incomplete' : ''}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        {phase === 'pending' && current && (
-          <div className={styles.pending}>
-            <h2>{current.name} is pending</h2>
-            <p>{current.detail || 'Map is being prepared. No inventory has been received for this server.'}</p>
-            <p>خريطتك تتجهز</p>
-            {pendingNote && <p>{pendingNote}</p>}
-            {error && <p className={styles.err}>{error}</p>}
-            <button type="button" onClick={refresh}>Request refresh</button>
+        <button type="button" className={styles.lang} onClick={switchLang}>
+          {t.langOther}
+        </button>
+        <div className={`${styles.card} ${styles.roster}`} dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang}>
+          <div className={styles.brand}>
+            <img className={styles.logo} src="/omxio-icon.png" width={72} height={72} alt="" />
+            <p className={styles.wm} translate="no"><b className={styles.wmo}>O</b>mxio</p>
+            <p className={styles.product}>{t.productBy}</p>
           </div>
-        )}
-        {ssoConfigured && (
-          <form method="post" action="/api/portal/oidc/link">
-            <input type="hidden" name="csrf" value={csrf} />
-            <button type="submit" className={styles.link}>ربط حساب أومكسيو · Link an Omxio account</button>
-          </form>
-        )}
-        <button type="button" className={styles.link} onClick={signOut}><bdi>خروج</bdi> · <bdi dir="ltr">Sign out</bdi></button>
-      </div>
+          <h1 className={styles.title}>{t.serversTitle}</h1>
+          <p>{t.serversLead}</p>
+          {servers.length === 0 && <p>{t.serversEmpty}</p>}
+          <ul className={styles.list}>
+            {servers.map(srv => (
+              <li key={srv.id} className={styles.serverItem}>
+                <button type="button" className={styles.openServer} onClick={() => openServer(srv)}>
+                  <strong>{srv.name}</strong>
+                  <span dir="ltr">{srv.address}</span>
+                  <span>{srv.status === 'ready' ? t.openServer : t.pendingTitle}</span>
+                </button>
+                <ServerSSHKey
+                  server={srv}
+                  lang={lang}
+                  copy={t}
+                  onUpdated={next => setServers(list => list.map(item => item.id === next.id ? { ...item, ...next, ssh_public_key: next.ssh_public_key ?? '', ssh_fingerprint: next.ssh_fingerprint ?? '' } : item))}
+                />
+              </li>
+            ))}
+          </ul>
+          {phase === 'pending' && current && (
+            <div className={styles.pending}>
+              <h2>{current.name}</h2>
+              <p>{current.detail || t.pendingDefault}</p>
+              {pendingNote && <p>{pendingNote}</p>}
+              {error && <p className={styles.err}>{error}</p>}
+              <button type="button" className={styles.secondary} onClick={refresh}>{t.refresh}</button>
+            </div>
+          )}
+          {ssoConfigured && (
+            <form method="post" action="/api/portal/oidc/link">
+              <input type="hidden" name="csrf" value={csrf} />
+              <button type="submit" className={styles.link}>{t.oidc}</button>
+            </form>
+          )}
+          <button type="button" className={styles.link} onClick={signOut}>{t.signOut}</button>
+        </div>
       </div>
     );
   }
@@ -330,7 +338,7 @@ export default function PortalGate({ children }: PortalGateProps) {
   return (
     <div className={styles.shell}>
       <button type="button" className={styles.switch} onClick={() => { setPortalSession('', csrf); setPhase('servers'); }}>
-        Servers
+        {t.backToServers}
       </button>
       {children}
     </div>
