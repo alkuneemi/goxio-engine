@@ -61,6 +61,8 @@ type Account struct {
 	Aliases      []string  `json:"aliases,omitempty"`
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
+	// CompanyName is the client display name on the servers page.
+	CompanyName string `json:"company_name,omitempty"`
 	// OIDCIssuer and OIDCSubject bind this account to one provider identity.
 	// They are not an email and are not a login name.
 	OIDCIssuer  string `json:"oidc_issuer,omitempty"`
@@ -97,6 +99,14 @@ type ServerView struct {
 	UpdatedAt      time.Time `json:"updated_at,omitempty"`
 	SSHPublicKey   string    `json:"ssh_public_key"`
 	SSHFingerprint string    `json:"ssh_fingerprint"`
+	CollectedAt    time.Time `json:"collected_at,omitempty"`
+	Containers     int       `json:"containers"`
+	Databases      int       `json:"databases"`
+	Volumes        int       `json:"volumes"`
+	Images         int       `json:"images"`
+	DiskUsedBytes  int64     `json:"disk_used_bytes"`
+	DiskSizeBytes  int64     `json:"disk_size_bytes"`
+	SharedAddress  bool      `json:"shared_address"`
 }
 
 type Session struct {
@@ -478,8 +488,10 @@ func (s *Store) ListServers(accountID string) ([]ServerView, error) {
 		if srv.AccountID != accountID {
 			continue
 		}
-		out = append(out, srv.view())
+		out = append(out, s.serverView(srv))
 	}
+	markSharedAddresses(out)
+	sortServerViews(out)
 	return out, nil
 }
 
@@ -505,7 +517,7 @@ func (s *Store) SetServerSSHPublicKey(accountID, serverID, raw string) (ServerVi
 	if err := s.saveServer(srv); err != nil {
 		return ServerView{}, err
 	}
-	return srv.view(), nil
+	return s.serverView(srv), nil
 }
 
 // DeleteServerSSHPublicKey removes the stored public key and its fingerprint.
@@ -525,7 +537,7 @@ func (s *Store) DeleteServerSSHPublicKey(accountID, serverID string) (ServerView
 	if err := s.saveServer(srv); err != nil {
 		return ServerView{}, err
 	}
-	return srv.view(), nil
+	return s.serverView(srv), nil
 }
 
 // FindAccount returns the account record. Callers must not serialize PasswordHash.
@@ -590,15 +602,7 @@ func (s *Store) LoadSnapshot(accountID, serverID string) (space.Snapshot, bool, 
 	if _, err := s.readServer(accountID, serverID); err != nil {
 		return space.Snapshot{}, false, ErrNotFound
 	}
-	var snap space.Snapshot
-	err := readJSON(s.snapPath(accountID, serverID), &snap)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return space.Snapshot{}, false, nil
-		}
-		return space.Snapshot{}, false, err
-	}
-	return snap, true, nil
+	return s.readSnapshot(accountID, serverID)
 }
 
 func (s *Store) Graph(accountID, serverID string) (*graph.Graph, Meta, error) {

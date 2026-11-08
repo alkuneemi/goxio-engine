@@ -122,6 +122,7 @@ func TestUnauthenticatedMapRoutes(t *testing.T) {
 		{http.MethodGet, "/api/portal/servers"},
 		{http.MethodPut, "/api/portal/servers/srv_x/ssh-key"},
 		{http.MethodDelete, "/api/portal/servers/srv_x/ssh-key"},
+		{http.MethodPut, "/api/portal/profile"},
 	}
 	for _, pth := range paths {
 		req := httptest.NewRequest(pth.method, pth.path, strings.NewReader(`{}`))

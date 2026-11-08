@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { api, portalFailure, setPortalSession } from '../../api';
-import type { PortalServer } from '../../types';
+import type { PortalProfile, PortalServer } from '../../types';
 import styles from './PortalGate.module.css';
-import ServerSSHKey from './ServerSSHKey';
+import ClientHeader from './ClientHeader';
+import ServerCard from './ServerCard';
 import {
   applyPortalLang,
   portalCopy,
@@ -52,6 +54,8 @@ export default function PortalGate({ children }: PortalGateProps) {
   const [pendingNote, setPendingNote] = useState('');
 
   const t = portalCopy(lang);
+  const [, setSearchParams] = useSearchParams();
+  const [profile, setProfile] = useState<PortalProfile | null>(null);
 
   useEffect(() => {
     const next = readPortalLang();
@@ -65,10 +69,19 @@ export default function PortalGate({ children }: PortalGateProps) {
     applyPortalLang(next);
   };
 
-  const loadServers = async (token: string) => {
+  const loadRoster = async (token: string) => {
+    const wanted = new URLSearchParams(window.location.search).get('server');
     setPortalSession('', token);
     const res = await api.servers();
-    setServers(res.data ?? []);
+    const list = res.data ?? [];
+    setServers(list);
+    const match = wanted ? list.find(item => item.id === wanted) : undefined;
+    if (match && match.status === 'ready') {
+      setCurrent(match);
+      setPortalSession(match.id, token);
+      setPhase('map');
+      return;
+    }
     setPhase('servers');
   };
 
@@ -86,7 +99,8 @@ export default function PortalGate({ children }: PortalGateProps) {
     api.me().then(res => {
       if (cancelled) return;
       setCsrf(res.data.csrf);
-      return loadServers(res.data.csrf);
+      setProfile(res.data);
+      return loadRoster(res.data.csrf);
     }).catch(() => {
       if (!cancelled) setPhase('login');
     });
@@ -104,7 +118,9 @@ export default function PortalGate({ children }: PortalGateProps) {
       const res = await api.login(login.trim(), password);
       setPassword('');
       setCsrf(res.data.csrf);
-      await loadServers(res.data.csrf);
+      const me = await api.me();
+      setProfile(me.data);
+      await loadRoster(res.data.csrf);
     } catch (err) {
       setError(portalFailure(err, lang));
     } finally {
@@ -124,6 +140,12 @@ export default function PortalGate({ children }: PortalGateProps) {
       setCsrf(res.data.csrf);
       setServers(res.data.servers ?? []);
       setPortalSession('', res.data.csrf);
+      try {
+        const me = await api.me();
+        setProfile(me.data);
+      } catch {
+        /* roster still opens */
+      }
       setPhase('servers');
     } catch (err) {
       setError(portalFailure(err, lang));
@@ -143,15 +165,30 @@ export default function PortalGate({ children }: PortalGateProps) {
     setCapsLock(e.getModifierState('CapsLock'));
   };
 
-  const openServer = (srv: PortalServer) => {
+  const openServer = (srv: PortalServer, view: 'cards' | 'map' = 'map') => {
     setCurrent(srv);
     if (srv.status !== 'ready') {
       setPortalSession('', csrf);
       setPhase('pending');
       return;
     }
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      params.set('server', srv.id);
+      params.set('view', view === 'cards' ? 'cards' : 'map');
+      return params;
+    }, { replace: true });
     setPortalSession(srv.id, csrf);
     setPhase('map');
+  };
+
+  const mergeServer = (next: PortalServer) => {
+    setServers(list => list.map(item => item.id === next.id ? {
+      ...item,
+      ...next,
+      ssh_public_key: next.ssh_public_key ?? '',
+      ssh_fingerprint: next.ssh_fingerprint ?? '',
+    } : item));
   };
 
   const refresh = async () => {
@@ -172,6 +209,7 @@ export default function PortalGate({ children }: PortalGateProps) {
     queryClient.clear();
     setCurrent(null);
     setServers([]);
+    setProfile(null);
     setMode('login');
     setConfirm('');
     setPhase('login');
@@ -294,22 +332,26 @@ export default function PortalGate({ children }: PortalGateProps) {
             <p className={styles.wm} translate="no"><b className={styles.wmo}>O</b>mxio</p>
             <p className={styles.product}>{t.productBy}</p>
           </div>
-          <h1 className={styles.title}>{t.serversTitle}</h1>
-          <p>{t.serversLead}</p>
+          {profile && (
+            <ClientHeader
+              profile={profile}
+              lang={lang}
+              copy={t}
+              onUpdated={setProfile}
+            />
+          )}
+          <h2 className={styles.serversHeading}>{t.serversTitle}</h2>
+          <p className={styles.serversLead}>{t.serversLead}</p>
           {servers.length === 0 && <p>{t.serversEmpty}</p>}
           <ul className={styles.list}>
             {servers.map(srv => (
-              <li key={srv.id} className={styles.serverItem}>
-                <button type="button" className={styles.openServer} onClick={() => openServer(srv)}>
-                  <strong>{srv.name}</strong>
-                  <span dir="ltr">{srv.address}</span>
-                  <span>{srv.status === 'ready' ? t.openServer : t.pendingTitle}</span>
-                </button>
-                <ServerSSHKey
+              <li key={srv.id}>
+                <ServerCard
                   server={srv}
                   lang={lang}
                   copy={t}
-                  onUpdated={next => setServers(list => list.map(item => item.id === next.id ? { ...item, ...next, ssh_public_key: next.ssh_public_key ?? '', ssh_fingerprint: next.ssh_fingerprint ?? '' } : item))}
+                  onOpen={openServer}
+                  onUpdated={mergeServer}
                 />
               </li>
             ))}
@@ -337,7 +379,16 @@ export default function PortalGate({ children }: PortalGateProps) {
 
   return (
     <div className={styles.shell}>
-      <button type="button" className={styles.switch} onClick={() => { setPortalSession('', csrf); setPhase('servers'); }}>
+      <button type="button" className={styles.switch} onClick={() => {
+        setPortalSession('', csrf);
+        setSearchParams(prev => {
+          const params = new URLSearchParams(prev);
+          params.delete('server');
+          params.delete('view');
+          return params;
+        }, { replace: true });
+        setPhase('servers');
+      }}>
         {t.backToServers}
       </button>
       {children}
