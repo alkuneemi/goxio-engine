@@ -128,15 +128,10 @@
   display: block;
 }
 
-.secret input {
-  padding-right: 48px;
-}
-
 .peek {
   position: absolute;
   top: 50%;
-  right: 4px;
-  left: auto;
+  inset-inline-end: 4px;
   transform: translateY(-50%);
   width: 40px;
   height: 40px;
@@ -175,6 +170,10 @@
 .card input:focus {
   border-color: #a0a0b5;
   box-shadow: 0 0 0 3px #a0a0b547;
+}
+
+.card .secret input {
+  padding-inline-end: 48px;
 }
 
 .warn {
