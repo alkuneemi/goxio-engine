@@ -44,21 +44,26 @@ function retryAfterSeconds(response: Response): number {
   return Math.max(0, Math.ceil((when - Date.now()) / 1000));
 }
 
-export function portalFailure(err: unknown): string {
+export function portalFailure(err: unknown, lang: 'ar' | 'en' = 'ar'): string {
+  const ar = lang === 'ar';
   if (err instanceof ApiError) {
     if (err.status === 401) {
-      return 'البريد أو كلمة المرور غير مطابقة. لم تُفتح جلسة. The login or password did not match. No session was opened.';
+      return ar ? 'البريد أو كلمة المرور غير مطابقة' : 'Email or password did not match';
     }
     if (err.status === 429) {
-      const wait = err.retryAfter > 0 ? ` أعد المحاولة بعد ${err.retryAfter} ثانية. Retry after ${err.retryAfter} seconds.` : '';
-      return `محاولات كثيرة. لم تُفتح جلسة.${wait} Too many attempts. No session was opened.`;
+      if (err.retryAfter > 0) {
+        return ar
+          ? `محاولات كثيرة أعد المحاولة بعد ${err.retryAfter} ثانية`
+          : `Too many attempts try again in ${err.retryAfter} seconds`;
+      }
+      return ar ? 'محاولات كثيرة حاول لاحقاً' : 'Too many attempts try again later';
     }
     if (err.status === 0) {
-      return 'تعذر الاتصال بالخادم. لم تُفتح جلسة. The server could not be reached. No session was opened.';
+      return ar ? 'تعذر الاتصال بالخادم' : 'Could not reach the server';
     }
     return err.message;
   }
-  return 'تعذر الاتصال بالخادم. لم تُفتح جلسة. The server could not be reached. No session was opened.';
+  return ar ? 'تعذر الاتصال بالخادم' : 'Could not reach the server';
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {

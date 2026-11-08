@@ -8,6 +8,10 @@ const router = createBrowserRouter([
     element: <Home />,
   },
   {
+    path: "/portal/login",
+    element: <Home />,
+  },
+  {
     path: "/node/:nodeId",
     element: <Home />,
   },
