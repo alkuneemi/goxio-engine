@@ -151,6 +151,20 @@ export const api = {
     }
   },
 
+  async setServerSSHKey(serverId: string, sshPublicKey: string): Promise<{ data: PortalServer }> {
+    return request(`/portal/servers/${encodeURIComponent(serverId)}/ssh-key`, {
+      method: 'PUT',
+      body: JSON.stringify({ ssh_public_key: sshPublicKey }),
+    });
+  },
+
+  async deleteServerSSHKey(serverId: string): Promise<{ data: PortalServer }> {
+    return request(`/portal/servers/${encodeURIComponent(serverId)}/ssh-key`, {
+      method: 'DELETE',
+      body: '{}',
+    });
+  },
+
   async postSpaceAction(body: SpaceActionRequest): Promise<{ data: SpaceActionRecord }> {
     return request<{ data: SpaceActionRecord }>('/space/actions', {
       method: 'POST',

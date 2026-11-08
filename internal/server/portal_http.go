@@ -288,3 +288,56 @@ func (s *Server) portalRefreshHandler(w http.ResponseWriter, r *http.Request) {
 		"at":        rec.At,
 	})
 }
+
+func (s *Server) portalServerSSHKeyHandler(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireCSRF(w, r, sess) {
+		return
+	}
+	srv, ok := s.requireServer(w, r, sess)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var body struct {
+			SSHPublicKey string `json:"ssh_public_key"`
+		}
+		dec := json.NewDecoder(io.LimitReader(r.Body, 1<<16))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid ssh public key")
+			return
+		}
+		view, err := s.portal.SetServerSSHPublicKey(sess.AccountID, srv.ID, body.SSHPublicKey)
+		if err != nil {
+			writeSSHKeyError(w, err)
+			return
+		}
+		writeData(w, s.logger, view)
+	case http.MethodDelete:
+		view, err := s.portal.DeleteServerSSHPublicKey(sess.AccountID, srv.ID)
+		if err != nil {
+			writeSSHKeyError(w, err)
+			return
+		}
+		writeData(w, s.logger, view)
+	default:
+		writeAPIError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func writeSSHKeyError(w http.ResponseWriter, err error) {
+	if errors.Is(err, portal.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if errors.Is(err, portal.ErrSSHPrivateKey) || errors.Is(err, portal.ErrSSHInvalid) || errors.Is(err, portal.ErrSSHUnsupported) {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeAPIError(w, http.StatusInternalServerError, "ssh public key unavailable")
+}

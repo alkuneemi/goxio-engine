@@ -80,18 +80,23 @@ type Server struct {
 	Partial    bool      `json:"partial"`
 	Complete   bool      `json:"complete"`
 	Detail     string    `json:"detail,omitempty"`
+	// SSHPublicKey is an OpenSSH public key. Private keys are never stored.
+	SSHPublicKey   string `json:"ssh_public_key,omitempty"`
+	SSHFingerprint string `json:"ssh_fingerprint,omitempty"`
 }
 
 // ServerView is the only server shape returned to a browser.
 type ServerView struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Address   string    `json:"address"`
-	Status    string    `json:"status"`
-	Partial   bool      `json:"partial"`
-	Complete  bool      `json:"complete"`
-	Detail    string    `json:"detail,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Address        string    `json:"address"`
+	Status         string    `json:"status"`
+	Partial        bool      `json:"partial"`
+	Complete       bool      `json:"complete"`
+	Detail         string    `json:"detail,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	SSHPublicKey   string    `json:"ssh_public_key"`
+	SSHFingerprint string    `json:"ssh_fingerprint"`
 }
 
 type Session struct {
@@ -478,6 +483,51 @@ func (s *Store) ListServers(accountID string) ([]ServerView, error) {
 	return out, nil
 }
 
+// SetServerSSHPublicKey stores one validated public key on the server record.
+// A later call replaces the previous key. Private keys are rejected.
+func (s *Store) SetServerSSHPublicKey(accountID, serverID, raw string) (ServerView, error) {
+	normalized, fingerprint, err := ParseSSHPublicKey(raw)
+	if err != nil {
+		return ServerView{}, err
+	}
+	if !safeID(accountID) || !safeID(serverID) {
+		return ServerView{}, ErrNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	srv, err := s.readServer(accountID, serverID)
+	if err != nil || srv.AccountID != accountID {
+		return ServerView{}, ErrNotFound
+	}
+	srv.SSHPublicKey = normalized
+	srv.SSHFingerprint = fingerprint
+	srv.UpdatedAt = time.Now().UTC()
+	if err := s.saveServer(srv); err != nil {
+		return ServerView{}, err
+	}
+	return srv.view(), nil
+}
+
+// DeleteServerSSHPublicKey removes the stored public key and its fingerprint.
+func (s *Store) DeleteServerSSHPublicKey(accountID, serverID string) (ServerView, error) {
+	if !safeID(accountID) || !safeID(serverID) {
+		return ServerView{}, ErrNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	srv, err := s.readServer(accountID, serverID)
+	if err != nil || srv.AccountID != accountID {
+		return ServerView{}, ErrNotFound
+	}
+	srv.SSHPublicKey = ""
+	srv.SSHFingerprint = ""
+	srv.UpdatedAt = time.Now().UTC()
+	if err := s.saveServer(srv); err != nil {
+		return ServerView{}, err
+	}
+	return srv.view(), nil
+}
+
 // FindAccount returns the account record. Callers must not serialize PasswordHash.
 func (s *Store) FindAccount(login string) (Account, error) {
 	login, err := canonicalLogin(login)
@@ -692,6 +742,7 @@ func (srv Server) view() ServerView {
 	return ServerView{
 		ID: srv.ID, Name: srv.Name, Address: srv.Address, Status: srv.Status,
 		Partial: srv.Partial, Complete: srv.Complete, Detail: srv.Detail, UpdatedAt: srv.UpdatedAt,
+		SSHPublicKey: srv.SSHPublicKey, SSHFingerprint: srv.SSHFingerprint,
 	}
 }
 

@@ -35,6 +35,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.HandleFunc("/api/portal/me", s.portalMeHandler).Methods("GET")
 	r.HandleFunc("/api/portal/servers", s.portalServersHandler).Methods("GET")
 	r.HandleFunc("/api/portal/servers/{id}/refresh", s.portalRefreshHandler).Methods("POST")
+	r.HandleFunc("/api/portal/servers/{id}/ssh-key", s.portalServerSSHKeyHandler).Methods("PUT", "DELETE")
 	r.HandleFunc("/api/graph", s.graphHandler).Methods("GET")
 	r.HandleFunc("/api/node/{id}", s.nodeHandler).Methods("GET")
 	r.HandleFunc("/api/health", s.apiHealthHandler).Methods("GET")
