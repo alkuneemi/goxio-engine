@@ -292,7 +292,7 @@
 }
 
 .roster {
-  width: min(560px, 100%);
+  width: min(680px, 100%);
 }
 
 .list {
@@ -453,4 +453,255 @@
   .card { padding: 28px 18px 24px; }
   .gate { padding: 64px 14px 28px; }
   .switch { right: 8px; top: 8px; }
+}
+
+.client {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ffffff14;
+}
+
+.clientHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.clientTitles {
+  min-width: 0;
+}
+
+.clientTitle {
+  margin: 0;
+  text-align: start;
+  font-size: 22px;
+  font-weight: 600;
+  color: #ececec;
+  font-family: var(--font-head-ar), var(--font-sans);
+}
+
+[dir="ltr"] .clientTitle,
+[dir="ltr"] .serversHeading {
+  font-family: var(--font-sans);
+}
+
+.clientLead,
+.serversLead {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #ececec8f;
+  line-height: 1.45;
+}
+
+.companyInput {
+  width: 100%;
+  min-height: 44px;
+  padding: 12px;
+  background: #141414;
+  color: #ececec;
+  border: 1px solid #ffffff22;
+  border-radius: 12px;
+  font-size: 15px;
+  outline: none;
+}
+
+.companyInput:focus {
+  border-color: #a0a0b5;
+  box-shadow: 0 0 0 3px #a0a0b547;
+}
+
+.metaList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.metaList div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.metaList dt {
+  margin: 0;
+  color: #ececec8f;
+}
+
+.metaList dd {
+  margin: 0;
+  color: #ececec;
+  text-align: end;
+  word-break: break-word;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  direction: ltr;
+}
+
+.serversHeading {
+  margin: 8px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ececec;
+  font-family: var(--font-head-ar), var(--font-sans);
+}
+
+.serverCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: #1b1b1b;
+  border: 1px solid #ffffff14;
+  border-radius: 14px;
+}
+
+.cardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.serverName {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ececec;
+  font-family: var(--font-head-ar), var(--font-sans);
+}
+
+.serverAddr {
+  margin: 4px 0 0;
+  color: #ecececad;
+  font-size: 13px;
+}
+
+.statusReady,
+.statusPending {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.statusReady { color: #9ad7b2; }
+.statusPending { color: #e0a64a; }
+
+.snapshot {
+  margin: 0;
+  font-size: 13px;
+  color: #ecececad;
+}
+
+.stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stats li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 8px 10px;
+  background: #141414;
+  border-radius: 12px;
+}
+
+.statIcon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: #a0a0b5;
+  background: #232323;
+  border: 1px solid #ffffff14;
+  border-radius: 10px;
+}
+
+.stats strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ececec;
+}
+
+.stats em {
+  display: block;
+  font-size: 12px;
+  font-style: normal;
+  color: #ececec8f;
+}
+
+.statWide { grid-column: 1 / -1; }
+
+.shared {
+  margin: 0;
+  font-size: 13px;
+  color: #e0a64a;
+  line-height: 1.45;
+}
+
+.entryActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.entryActions button {
+  width: 100%;
+  gap: 8px;
+}
+.entryActions .primary,
+.entryActions .secondary {
+  width: auto;
+  flex: 1;
+  min-height: 46px;
+}
+
+@media (min-width: 560px) {
+  .entryActions {
+    flex-direction: row;
+  }
+}
+
+.sshDetails {
+  border-top: 1px solid #ffffff14;
+  padding-top: 8px;
+}
+
+.sshDetails summary {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #ecececad;
+  font-size: 13px;
+}
+
+.sshDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.sshDetails summary code {
+  flex: 1 1 100%;
+  display: block;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #141414;
+  color: #ececec;
+  font-size: 12px;
+  word-break: break-all;
 }

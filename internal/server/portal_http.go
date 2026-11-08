@@ -244,9 +244,61 @@ func (s *Server) portalMeHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeData(w, s.logger, map[string]any{
+	payload := map[string]any{
 		"csrf":       sess.CSRF,
 		"expires_at": sess.ExpiresAt,
+	}
+	if prof, err := s.portal.Profile(sess.AccountID); err == nil {
+		payload["id"] = prof.ID
+		payload["login"] = prof.Login
+		payload["email"] = prof.Email
+		payload["company_name"] = prof.CompanyName
+		payload["created_at"] = prof.CreatedAt
+		payload["server_count"] = prof.ServerCount
+	}
+	writeData(w, s.logger, payload)
+}
+
+func (s *Server) portalProfileHandler(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.requireSession(w, r)
+	if !ok {
+		return
+	}
+	if !s.requireCSRF(w, r, sess) {
+		return
+	}
+	var body struct {
+		CompanyName string `json:"company_name"`
+	}
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<16))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid company name")
+		return
+	}
+	prof, err := s.portal.SetCompanyName(sess.AccountID, body.CompanyName)
+	if err != nil {
+		var pe *portal.PolicyError
+		if errors.As(err, &pe) {
+			writeAPIError(w, http.StatusBadRequest, pe.Error())
+			return
+		}
+		if errors.Is(err, portal.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "profile unavailable")
+		return
+	}
+	writeData(w, s.logger, map[string]any{
+		"csrf":         sess.CSRF,
+		"expires_at":   sess.ExpiresAt,
+		"id":           prof.ID,
+		"login":        prof.Login,
+		"email":        prof.Email,
+		"company_name": prof.CompanyName,
+		"created_at":   prof.CreatedAt,
+		"server_count": prof.ServerCount,
 	})
 }
 

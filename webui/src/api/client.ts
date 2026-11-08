@@ -1,4 +1,4 @@
-import type { GraphResponse, NodeResponse, HealthResponse, SpaceSummary, SpaceActionRequest, SpaceActionRecord, PortalServer } from '../types';
+import type { GraphResponse, NodeResponse, HealthResponse, SpaceSummary, SpaceActionRequest, SpaceActionRecord, PortalServer, PortalProfile } from '../types';
 
 const API_BASE = '/api';
 
@@ -133,8 +133,15 @@ export const api = {
     setPortalSession('', '');
   },
 
-  async me(): Promise<{ data: { csrf: string } }> {
+  async me(): Promise<{ data: PortalProfile }> {
     return request('/portal/me');
+  },
+
+  async updateProfile(companyName: string): Promise<{ data: PortalProfile }> {
+    return request('/portal/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ company_name: companyName }),
+    });
   },
 
   async servers(): Promise<{ data: PortalServer[] }> {

@@ -3,6 +3,7 @@ import { api, portalFailure } from '../../api';
 import type { PortalServer } from '../../types';
 import styles from './PortalGate.module.css';
 import type { PortalCopy, PortalLang } from './portalCopy';
+import { hasStoredSSHKey } from './format';
 
 function KeyIcon() {
   return (
@@ -25,7 +26,7 @@ export default function ServerSSHKey({ server, lang, copy: t, onUpdated }: Serve
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
-  const stored = Boolean(server.ssh_fingerprint);
+  const stored = hasStoredSSHKey(server);
 
   const explain = (err: unknown) => {
     const raw = err instanceof Error ? err.message : '';

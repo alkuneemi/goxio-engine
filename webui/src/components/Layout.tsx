@@ -89,7 +89,7 @@ export default function Layout() {
     setSearchParams(prev => {
       const params = new URLSearchParams(prev);
       if (next === 'cards') params.set('view', 'cards');
-      else params.delete('view');
+      else params.set('view', 'map');
       return params;
     }, { replace: true });
   }, [setSearchParams]);

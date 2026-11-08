@@ -17,8 +17,28 @@ export interface PortalServer {
   partial: boolean;
   complete: boolean;
   detail?: string;
+  updated_at?: string;
   ssh_public_key?: string;
   ssh_fingerprint?: string;
+  collected_at?: string;
+  containers?: number;
+  databases?: number;
+  volumes?: number;
+  images?: number;
+  disk_used_bytes?: number;
+  disk_size_bytes?: number;
+  shared_address?: boolean;
+}
+
+export interface PortalProfile {
+  csrf: string;
+  expires_at?: string;
+  id: string;
+  login: string;
+  email: string;
+  company_name: string;
+  created_at: string;
+  server_count: number;
 }
 
 export interface SpaceSummary {
