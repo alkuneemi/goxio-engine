@@ -2,6 +2,7 @@ import type { Graph, SpaceActivity, SpaceSummary } from '../../types';
 import type { Filters } from '../../utils';
 import { SPACE_ACTIVITIES, hasSpaceFilter, isSpaceNode } from '../../utils';
 import { api } from '../../api';
+import { useAccountChrome } from '../portal/useAccountChrome';
 import styles from './SpaceBar.module.css';
 
 export type MapView = 'cards' | 'map';
@@ -16,6 +17,7 @@ interface SpaceBarProps {
 }
 
 export default function SpaceBar({ graph, summary, filters, onFilterChange, view, onView }: SpaceBarProps) {
+  const chrome = useAccountChrome();
   const repos = (graph?.nodes ?? []).filter(n => n.type === 'repo' && isSpaceNode(n));
   const accounts = (graph?.nodes ?? []).filter(n => n.type === 'github_account' && isSpaceNode(n));
   const hasActivity = (graph?.nodes ?? []).some(n => typeof n.metadata?.activity === 'string');
@@ -37,6 +39,11 @@ export default function SpaceBar({ graph, summary, filters, onFilterChange, view
           Map
         </button>
       </div>
+      {chrome?.onServers && (
+        <button type="button" className={styles.serversBack} onClick={chrome.onServers}>
+          {chrome.serversLabel}
+        </button>
+      )}
 
       <label className={styles.field}>
         <span>Repo</span>

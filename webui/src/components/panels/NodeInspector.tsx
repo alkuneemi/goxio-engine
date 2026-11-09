@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Panel } from '../ui';
 import { useNodeFromGraph } from '../../api';
 import { calculatePriority, countConnections, isCoreSpace, isSpaceNode, nodeActivity, nodeSizeLabel, pressureValue } from '../../utils';
@@ -31,7 +31,11 @@ export default function NodeInspector({ nodeId, onClose, graph, onNodeSelect }: 
   const node = useNodeFromGraph(nodeId);
   const [copied, setCopied] = useState(false);
   const [action, setAction] = useState<SpaceActionName | null>(null);
-  useEffect(() => { setAction(null); }, [nodeId]);
+  const [actionNodeId, setActionNodeId] = useState(nodeId);
+  if (nodeId !== actionNodeId) {
+    setActionNodeId(nodeId);
+    setAction(null);
+  }
 
   const handleCopyId = useCallback(() => {
     if (!node) return;

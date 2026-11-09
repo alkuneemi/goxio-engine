@@ -9,7 +9,7 @@ import (
 
 const maxCompanyName = 80
 
-// AccountProfile is the client identity shown on the servers page.
+// AccountProfile is the client identity shown on the settings page.
 // It never includes a password hash.
 type AccountProfile struct {
 	ID          string `json:"id"`
@@ -94,7 +94,7 @@ func (s *Store) Profile(accountID string) (AccountProfile, error) {
 	return s.profileLocked(acct), nil
 }
 
-// SetCompanyName stores the display name shown at the top of the servers page.
+// SetCompanyName stores the display name edited on the settings page.
 func (s *Store) SetCompanyName(accountID, raw string) (AccountProfile, error) {
 	name, err := prepareCompanyName(raw)
 	if err != nil {

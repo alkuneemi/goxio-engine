@@ -1,0 +1,100 @@
+.wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid #ffffff22;
+  background: #232323;
+  color: #ececec;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: #2d2d2d;
+  color: #fff;
+}
+
+.button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px #a0a0b547;
+}
+
+.button[aria-expanded="true"] {
+  border-color: #a0a0b5;
+  color: #fff;
+}
+
+.menu {
+  position: absolute;
+  z-index: 40;
+  inset-inline-end: 0;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 6px;
+  background: #232323;
+  border: 1px solid #ffffff22;
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menuDown {
+  top: calc(100% + 8px);
+}
+
+.menuUp {
+  bottom: calc(100% + 8px);
+}
+
+.identity {
+  margin: 0;
+  padding: 8px 10px 6px;
+  color: #ececec8f;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: ltr;
+  text-align: left;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #ececec;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: #2d2d2d;
+  outline: none;
+}
+
+.itemQuiet {
+  color: #ecececad;
+  font-weight: 500;
+  border-top: 1px solid #ffffff14;
+  border-radius: 0 0 10px 10px;
+  margin-top: 4px;
+}
