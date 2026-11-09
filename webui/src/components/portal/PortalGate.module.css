@@ -196,8 +196,7 @@
 
 .primary,
 .secondary,
-.link,
-.switch {
+.link {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -435,32 +434,149 @@
 
 .shell { height: 100%; }
 
-.switch {
-  position: fixed;
-  z-index: 260;
-  top: 8px;
-  right: 220px;
-  width: auto;
-  background: transparent;
-  color: #a0a0b5;
-  border: 1px solid #ffffff22;
-  padding: 4px 8px;
-  font-size: 12px;
-  min-height: 32px;
-}
-
 @media (max-width: 640px) {
   .card { padding: 28px 18px 24px; }
   .gate { padding: 64px 14px 28px; }
-  .switch { right: 8px; top: 8px; }
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #ececec;
+  font-family: var(--font-body-ar), var(--font-sans);
+  background:
+    radial-gradient(900px 420px at 50% -8%, #232323 0%, transparent 62%),
+    #141414;
+}
+
+.appHeader,
+.appFooter {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  background: #161616;
+}
+
+.appHeader {
+  height: 56px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid #ffffff14;
+}
+
+.appFooter {
+  min-height: 52px;
+  justify-content: flex-end;
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid #ffffff14;
+}
+
+.appBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.appLogo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.appWord {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: #ececec;
+}
+
+.appTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.langInline {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #ffffff22;
+  background: #232323;
+  color: #ecececad;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.langInline:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px #a0a0b547;
+}
+
+.appMain {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 20px 16px 28px;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0;
+  background: transparent;
+  color: #ecececad;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.backLink:hover {
+  color: #ececec;
+}
+
+.backChevron {
+  display: block;
+}
+
+[dir="rtl"] .backChevron {
+  transform: scaleX(-1);
+}
+
+.settingsTitle {
+  margin: 0;
+  text-align: start;
+  font-size: 22px;
+  font-weight: 600;
+  color: #ececec;
+  font-family: var(--font-head-ar), var(--font-sans);
+}
+
+[dir="ltr"] .settingsTitle {
+  font-family: var(--font-sans);
 }
 
 .client {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #ffffff14;
 }
 
 .clientHead {
@@ -495,6 +611,10 @@
   line-height: 1.45;
 }
 
+.serversLead {
+  margin-bottom: 16px;
+}
+
 .companyInput {
   width: 100%;
   min-height: 44px;
@@ -505,6 +625,7 @@
   border-radius: 12px;
   font-size: 15px;
   outline: none;
+  text-align: start;
 }
 
 .companyInput:focus {
@@ -537,14 +658,38 @@
   word-break: break-word;
 }
 
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+.metaList .metaAccount {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metaList dd.accountId {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #141414;
   direction: ltr;
+  text-align: right;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(11px, 3.1vw, 13px);
+  line-height: 1.4;
+  letter-spacing: 0;
+  font-variant-ligatures: none;
 }
 
 .serversHeading {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 18px;
   font-weight: 600;
   color: #ececec;

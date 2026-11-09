@@ -7,11 +7,32 @@
   z-index: var(--z-sticky);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
-  padding: 0 var(--space-5);
+  padding: 0 var(--space-4);
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-default);
+}
+
+.headerMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.headerMain::-webkit-scrollbar {
+  display: none;
+}
+
+.headerEdge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
 }
 
 .appName {
@@ -133,6 +154,20 @@
 .layoutButton:hover {
   border-color: var(--border-strong);
   background: var(--bg-surface);
+}
+
+.layoutPrefix {
+  white-space: pre;
+}
+
+@media (max-width: 720px) {
+  .layoutPrefix {
+    display: none;
+  }
+
+  .header {
+    padding: 0 8px;
+  }
 }
 
 .chevron {

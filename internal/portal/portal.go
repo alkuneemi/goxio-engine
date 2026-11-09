@@ -61,7 +61,7 @@ type Account struct {
 	Aliases      []string  `json:"aliases,omitempty"`
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
-	// CompanyName is the client display name on the servers page.
+	// CompanyName is the client display name edited on the settings page.
 	CompanyName string `json:"company_name,omitempty"`
 	// OIDCIssuer and OIDCSubject bind this account to one provider identity.
 	// They are not an email and are not a login name.

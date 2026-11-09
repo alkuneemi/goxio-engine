@@ -36,6 +36,21 @@
   border-left: 1px solid var(--border-default);
 }
 
+.serversBack {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body-ar), var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+
 .on {
   color: #041716;
   background: #00D4C8;

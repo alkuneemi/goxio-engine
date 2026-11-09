@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, portalFailure } from '../../api';
 import type { PortalProfile } from '../../types';
 import styles from './PortalGate.module.css';
@@ -24,6 +24,10 @@ interface ClientHeaderProps {
 export default function ClientHeader({ profile, lang, copy: t, onUpdated }: ClientHeaderProps) {
   const [name, setName] = useState(profile.company_name ?? '');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setName(profile.company_name ?? '');
+  }, [profile.company_name]);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
 
@@ -44,11 +48,11 @@ export default function ClientHeader({ profile, lang, copy: t, onUpdated }: Clie
   };
 
   return (
-    <section className={styles.client} aria-label={t.companyName}>
+    <section className={styles.client}>
       <div className={styles.clientHead}>
         <span className={styles.sshIcon}><BuildingIcon /></span>
         <div className={styles.clientTitles}>
-          <h1 className={styles.clientTitle}>{profile.company_name || t.companyName}</h1>
+          <h2 className={styles.clientTitle}>{profile.company_name || t.companyName}</h2>
           <p className={styles.clientLead}>{t.companyLead}</p>
         </div>
       </div>
@@ -79,9 +83,9 @@ export default function ClientHeader({ profile, lang, copy: t, onUpdated }: Clie
             <dd dir="ltr">{profile.email}</dd>
           </div>
         )}
-        <div>
+        <div className={styles.metaAccount}>
           <dt>{t.clientAccount}</dt>
-          <dd className={styles.mono} dir="ltr">{profile.id}</dd>
+          <dd className={styles.accountId} dir="ltr" data-account-id={profile.id}>{profile.id}</dd>
         </div>
         <div>
           <dt>{t.clientCreated}</dt>

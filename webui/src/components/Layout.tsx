@@ -6,6 +6,8 @@ import HeaderBar, { type LayoutMode } from './HeaderBar';
 import DrillCards from './space/DrillCards';
 import SpaceBar, { type MapView } from './space/SpaceBar';
 import { ErrorBoundary, EmptyState } from './ui';
+import { AccountMenu } from './portal/AccountChrome';
+import { useAccountChrome } from './portal/useAccountChrome';
 import { useWebSocket, useAppShortcuts } from '../hooks';
 import { useGraph as useGraphData, useSpaceSummary } from '../api';
 import {
@@ -43,6 +45,7 @@ function searchWithoutEdge(): string {
 }
 
 export default function Layout() {
+  const account = useAccountChrome();
   const { nodeId: urlNodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -276,7 +279,7 @@ export default function Layout() {
         }}
       />
 
-      <div className={`${styles.graphArea} ${styles.graphAreaWithSpace}`}>
+      <div className={`${styles.graphArea} ${styles.graphAreaWithSpace} ${account ? styles.graphAreaWithAccount : ''}`}>
         <ErrorBoundary>
           {isFilteredEmpty ? (
             <EmptyState
@@ -336,6 +339,12 @@ export default function Layout() {
         onClose={() => setSearchOpen(false)}
         onNodeSelect={handleSearchSelect}
       />
+
+      {account && (
+        <footer className={styles.accountFoot}>
+          <AccountMenu placement="footer" />
+        </footer>
+      )}
     </div>
   );
 }

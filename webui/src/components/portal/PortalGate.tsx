@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { api, portalFailure, setPortalSession } from '../../api';
 import type { PortalProfile, PortalServer } from '../../types';
 import styles from './PortalGate.module.css';
+import { AccountChromeProvider, AccountMenu } from './AccountChrome';
 import ClientHeader from './ClientHeader';
 import ServerCard from './ServerCard';
 import {
@@ -16,6 +17,14 @@ import {
 
 interface PortalGateProps {
   children: ReactNode;
+}
+
+function BackChevron() {
+  return (
+    <svg className={styles.backChevron} viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M14.5 6.5 9 12l5.5 5.5" />
+    </svg>
+  );
 }
 
 function EyeIcon({ hidden }: { hidden: boolean }) {
@@ -37,7 +46,7 @@ function EyeIcon({ hidden }: { hidden: boolean }) {
 export default function PortalGate({ children }: PortalGateProps) {
   const queryClient = useQueryClient();
   const [lang, setLang] = useState<PortalLang>('ar');
-  const [phase, setPhase] = useState<'checking' | 'login' | 'servers' | 'pending' | 'map'>('checking');
+  const [phase, setPhase] = useState<'checking' | 'login' | 'servers' | 'pending' | 'settings' | 'map'>('checking');
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
@@ -70,11 +79,16 @@ export default function PortalGate({ children }: PortalGateProps) {
   };
 
   const loadRoster = async (token: string) => {
-    const wanted = new URLSearchParams(window.location.search).get('server');
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get('server');
     setPortalSession('', token);
     const res = await api.servers();
     const list = res.data ?? [];
     setServers(list);
+    if (params.get('screen') === 'settings') {
+      setPhase('settings');
+      return;
+    }
     const match = wanted ? list.find(item => item.id === wanted) : undefined;
     if (match && match.status === 'ready') {
       setCurrent(match);
@@ -203,7 +217,7 @@ export default function PortalGate({ children }: PortalGateProps) {
     }
   };
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try { await api.logout(); } catch { /* cookie cleared locally */ }
     setPortalSession('', '');
     queryClient.clear();
@@ -213,7 +227,47 @@ export default function PortalGate({ children }: PortalGateProps) {
     setMode('login');
     setConfirm('');
     setPhase('login');
-  };
+  }, [queryClient]);
+
+  const openSettings = useCallback(() => {
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      params.delete('server');
+      params.delete('view');
+      params.set('screen', 'settings');
+      return params;
+    }, { replace: true });
+    setPortalSession('', csrf);
+    setPhase('settings');
+  }, [csrf, setSearchParams]);
+
+  const closeSettings = useCallback(() => {
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      params.delete('screen');
+      params.delete('server');
+      params.delete('view');
+      return params;
+    }, { replace: true });
+    setPortalSession('', csrf);
+    setCurrent(null);
+    setPhase('servers');
+  }, [csrf, setSearchParams]);
+
+  const leave = useCallback(() => { void signOut(); }, [signOut]);
+
+  const backToServers = useCallback(() => {
+    setPortalSession('', csrf);
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      params.delete('server');
+      params.delete('view');
+      params.delete('screen');
+      return params;
+    }, { replace: true });
+    setCurrent(null);
+    setPhase('servers');
+  }, [csrf, setSearchParams]);
 
   if (phase === 'checking') {
     return <p className={styles.center}>{t.checking}</p>;
@@ -320,78 +374,102 @@ export default function PortalGate({ children }: PortalGateProps) {
     );
   }
 
-  if (phase === 'servers' || phase === 'pending') {
-    return (
-      <div className={styles.gate}>
-        <button type="button" className={styles.lang} onClick={switchLang}>
-          {t.langOther}
-        </button>
-        <div className={`${styles.card} ${styles.roster}`} dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang}>
-          <div className={styles.brand}>
-            <img className={styles.logo} src="/omxio-icon.png" width={72} height={72} alt="" />
-            <p className={styles.wm} translate="no"><b className={styles.wmo}>O</b>mxio</p>
-            <p className={styles.product}>{t.productBy}</p>
-          </div>
-          {profile && (
-            <ClientHeader
-              profile={profile}
+  const roster = (
+    <div data-screen="servers">
+      <h1 className={styles.serversHeading}>{t.serversTitle}</h1>
+      <p className={styles.serversLead}>{t.serversLead}</p>
+      {servers.length === 0 && <p>{t.serversEmpty}</p>}
+      <ul className={styles.list}>
+        {servers.map(srv => (
+          <li key={srv.id}>
+            <ServerCard
+              server={srv}
               lang={lang}
               copy={t}
-              onUpdated={setProfile}
+              onOpen={openServer}
+              onUpdated={mergeServer}
             />
-          )}
-          <h2 className={styles.serversHeading}>{t.serversTitle}</h2>
-          <p className={styles.serversLead}>{t.serversLead}</p>
-          {servers.length === 0 && <p>{t.serversEmpty}</p>}
-          <ul className={styles.list}>
-            {servers.map(srv => (
-              <li key={srv.id}>
-                <ServerCard
-                  server={srv}
-                  lang={lang}
-                  copy={t}
-                  onOpen={openServer}
-                  onUpdated={mergeServer}
-                />
-              </li>
-            ))}
-          </ul>
-          {phase === 'pending' && current && (
-            <div className={styles.pending}>
-              <h2>{current.name}</h2>
-              <p>{current.detail || t.pendingDefault}</p>
-              {pendingNote && <p>{pendingNote}</p>}
-              {error && <p className={styles.err}>{error}</p>}
-              <button type="button" className={styles.secondary} onClick={refresh}>{t.refresh}</button>
-            </div>
-          )}
-          {ssoConfigured && (
-            <form method="post" action="/api/portal/oidc/link">
-              <input type="hidden" name="csrf" value={csrf} />
-              <button type="submit" className={styles.link}>{t.oidc}</button>
-            </form>
-          )}
-          <button type="button" className={styles.link} onClick={signOut}>{t.signOut}</button>
+          </li>
+        ))}
+      </ul>
+      {phase === 'pending' && current && (
+        <div className={styles.pending}>
+          <h2>{current.name}</h2>
+          <p>{current.detail || t.pendingDefault}</p>
+          {pendingNote && <p>{pendingNote}</p>}
+          {error && <p className={styles.err}>{error}</p>}
+          <button type="button" className={styles.secondary} onClick={refresh}>{t.refresh}</button>
         </div>
-      </div>
-    );
-  }
+      )}
+      {ssoConfigured && (
+        <form method="post" action="/api/portal/oidc/link">
+          <input type="hidden" name="csrf" value={csrf} />
+          <button type="submit" className={styles.link}>{t.oidc}</button>
+        </form>
+      )}
+      {!profile && (
+        <button type="button" className={styles.link} onClick={signOut}>{t.signOut}</button>
+      )}
+    </div>
+  );
 
-  return (
-    <div className={styles.shell}>
-      <button type="button" className={styles.switch} onClick={() => {
-        setPortalSession('', csrf);
-        setSearchParams(prev => {
-          const params = new URLSearchParams(prev);
-          params.delete('server');
-          params.delete('view');
-          return params;
-        }, { replace: true });
-        setPhase('servers');
-      }}>
+  const settings = (
+    <section className={styles.settings} data-screen="settings" aria-labelledby="goxio-settings-title">
+      <button type="button" className={styles.backLink} onClick={closeSettings}>
+        <BackChevron />
         {t.backToServers}
       </button>
-      {children}
+      <h1 id="goxio-settings-title" className={styles.settingsTitle}>{t.settings}</h1>
+      <p className={styles.clientLead}>{t.settingsLead}</p>
+      {profile && (
+        <ClientHeader
+          profile={profile}
+          lang={lang}
+          copy={t}
+          onUpdated={setProfile}
+        />
+      )}
+    </section>
+  );
+
+  const frame = phase === 'map' ? (
+    <div className={styles.shell}>{children}</div>
+  ) : (
+    <div className={styles.app} dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang}>
+      <header className={styles.appHeader}>
+        <div className={styles.appBrand}>
+          <img className={styles.appLogo} src="/omxio-icon.png" width={28} height={28} alt="" />
+          <p className={styles.appWord} translate="no"><b className={styles.wmo}>O</b>mxio</p>
+        </div>
+        <div className={styles.appTools}>
+          <button type="button" className={styles.langInline} onClick={switchLang}>
+            {t.langOther}
+          </button>
+          <AccountMenu placement="header" />
+        </div>
+      </header>
+      <main className={styles.appMain}>
+        {phase === 'settings' ? settings : roster}
+      </main>
+      <footer className={styles.appFooter}>
+        <AccountMenu placement="footer" />
+      </footer>
     </div>
+  );
+
+  if (!profile) return frame;
+
+  return (
+    <AccountChromeProvider
+      profile={profile}
+      lang={lang}
+      copy={t}
+      onSettings={openSettings}
+      onSignOut={leave}
+      onServers={phase === 'map' ? backToServers : undefined}
+      serversLabel={t.backToServers}
+    >
+      {frame}
+    </AccountChromeProvider>
   );
 }

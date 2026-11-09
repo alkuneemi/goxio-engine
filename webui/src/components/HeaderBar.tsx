@@ -1,6 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import type { Graph, NodeType, HealthStatus } from '../types';
 import { activeFilterCount as countActiveFilters, nodeSource, type Filters, type NodeSource } from '../utils';
+import { AccountMenu } from './portal/AccountChrome';
 import styles from './HeaderBar.module.css';
 
 export type LayoutMode = 'hierarchical' | 'force' | 'swimlane';
@@ -217,6 +218,7 @@ export default function HeaderBar({
 
   return (
     <header className={styles.header}>
+      <div className={styles.headerMain}>
       <span className={styles.appName}>
         <span className={styles.brand}><span className={styles.brandGo}>Go</span><span className={styles.brandXio}>XIO</span></span>
         {wsStatus && (
@@ -254,7 +256,8 @@ export default function HeaderBar({
           aria-haspopup="listbox"
           aria-expanded={dropdownOpen}
         >
-          Layout: {LAYOUT_LABELS[layoutMode]}
+          <span className={styles.layoutPrefix}>Layout: </span>
+          <span>{LAYOUT_LABELS[layoutMode]}</span>
           <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M6 9l6 6 6-6" />
           </svg>
@@ -446,6 +449,10 @@ export default function HeaderBar({
           </span>
         )}
         <span className={styles.totalCount}>{healthCounts.total} nodes</span>
+      </div>
+      </div>
+      <div className={styles.headerEdge}>
+        <AccountMenu placement="header" />
       </div>
     </header>
   );
