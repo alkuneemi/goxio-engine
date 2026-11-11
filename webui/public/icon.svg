@@ -5,16 +5,16 @@
       <stop offset="100%" stop-color="#1e293b"/>
     </linearGradient>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#818cf8"/>
+      <stop offset="0%" stop-color="#4a4a5c"/>
+      <stop offset="100%" stop-color="#a0a0b5"/>
     </linearGradient>
     <linearGradient id="edge-grad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#818cf8" stop-opacity="0.6"/>
+      <stop offset="0%" stop-color="#4a4a5c" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#a0a0b5" stop-opacity="0.6"/>
     </linearGradient>
     <linearGradient id="node-green" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#34d399"/>
-      <stop offset="100%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#b5b6cf"/>
     </linearGradient>
     <linearGradient id="node-purple" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#a78bfa"/>

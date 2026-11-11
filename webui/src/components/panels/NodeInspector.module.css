@@ -475,7 +475,7 @@
 .pressureTrack > span {
   display: block;
   height: 100%;
-  background: #00D4C8;
+  background: var(--brand);
 }
 
 .actions {

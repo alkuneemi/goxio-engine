@@ -27,22 +27,21 @@ body {
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: var(--leading-normal);
-  color: var(--text-primary);
-  background: var(--bg-void);
-  color-scheme: dark;
+  color: var(--text);
+  background: var(--chrome);
 }
 
 /* Focus styles */
 
 :focus-visible {
-  outline: 2px solid var(--accent-highlight);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
 /* Selection */
 ::selection {
-  background-color: rgba(59, 130, 246, 0.25);
-  color: var(--text-primary);
+  background-color: color-mix(in srgb, var(--brand) 32%, transparent);
+  color: var(--text);
 }
 
 /* Scrollbar - minimal and dark */

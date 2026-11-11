@@ -9,25 +9,25 @@
   display: grid;
   place-items: center;
   border-radius: 999px;
-  border: 1px solid #ffffff22;
-  background: #232323;
-  color: #ececec;
+  border: 1px solid var(--stroke);
+  background: var(--elevated);
+  color: var(--text);
   cursor: pointer;
 }
 
 .button:hover {
-  background: #2d2d2d;
-  color: #fff;
+  background: var(--elevated-h);
+  color: var(--text);
 }
 
 .button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px #a0a0b547;
+  box-shadow: var(--focus-ring);
 }
 
 .button[aria-expanded="true"] {
-  border-color: #a0a0b5;
-  color: #fff;
+  border-color: var(--brand);
+  color: var(--text);
 }
 
 .menu {
@@ -37,10 +37,10 @@
   min-width: 220px;
   max-width: min(280px, calc(100vw - 24px));
   padding: 6px;
-  background: #232323;
-  border: 1px solid #ffffff22;
+  background: var(--elevated);
+  border: 1px solid var(--stroke);
   border-radius: 14px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-pop);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -57,7 +57,7 @@
 .identity {
   margin: 0;
   padding: 8px 10px 6px;
-  color: #ececec8f;
+  color: var(--text3);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -78,7 +78,7 @@
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #ececec;
+  color: var(--text);
   font-size: 14px;
   font-weight: 600;
   text-align: start;
@@ -87,14 +87,14 @@
 
 .item:hover,
 .item:focus-visible {
-  background: #2d2d2d;
+  background: var(--elevated-h);
   outline: none;
 }
 
 .itemQuiet {
-  color: #ecececad;
+  color: var(--text2);
   font-weight: 500;
-  border-top: 1px solid #ffffff14;
+  border-top: 1px solid var(--stroke3);
   border-radius: 0 0 10px 10px;
   margin-top: 4px;
 }

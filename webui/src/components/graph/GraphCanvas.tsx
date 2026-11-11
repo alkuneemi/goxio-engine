@@ -26,6 +26,7 @@ import type { Graph, GraphEdge } from '../../types';
 import { calculatePriority, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, debounce, worstHealth, type NamespaceSummary } from '../../utils';
 import { useLayoutPersistence } from '../../hooks';
 import type { LayoutMode } from '../HeaderBar';
+import { graphPaint } from '../../theme';
 import styles from './GraphCanvas.module.css';
 
 const nodeTypes: NodeTypes = {
@@ -484,6 +485,14 @@ function GraphCanvasInner({
   const { savedPositions, savePosition, clearLayout } = useLayoutPersistence(graph, layoutMode);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [justSavedNodeId, setJustSavedNodeId] = useState<string | null>(null);
+  const [paint, setPaint] = useState(graphPaint);
+  useEffect(() => {
+    const sync = () => setPaint(graphPaint());
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
   // Layout transition: start it during render when layoutMode changes, so the
   // fade begins on the same frame as the new layout.
   const [transitionMode, setTransitionMode] = useState(layoutMode);
@@ -710,8 +719,8 @@ function GraphCanvasInner({
         <Background
           variant={BackgroundVariant.Dots}
           gap={28}
-          size={1.2}
-          color="rgba(255, 255, 255, 0.06)"
+          size={1.4}
+          color={paint.dot}
         />
         <Controls
           className={styles.controls}
@@ -727,11 +736,11 @@ function GraphCanvasInner({
         </Controls>
         <MiniMap
           className={styles.minimap}
-          nodeColor="#2a2a2a"
-          nodeStrokeColor="rgba(255, 255, 255, 0.15)"
+          nodeColor={paint.node}
+          nodeStrokeColor={paint.stroke}
           nodeBorderRadius={4}
-          maskColor="rgba(0, 0, 0, 0.7)"
-          bgColor="#111111"
+          maskColor={paint.mask}
+          bgColor={paint.bg}
           position="bottom-left"
           pannable
           zoomable

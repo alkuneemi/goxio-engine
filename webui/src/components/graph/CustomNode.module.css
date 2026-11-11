@@ -18,9 +18,9 @@
   max-width: var(--node-max-width);
   height: var(--node-height);
   padding: 0 var(--space-4);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  border-left: 2px solid color-mix(in srgb, var(--type-color) 40%, transparent);
+  background: var(--node-fill);
+  border: 1px solid var(--node-line);
+  border-left: 3px solid var(--type-color, var(--brand));
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   transition:
@@ -95,7 +95,7 @@
 .type {
   font-size: var(--text-2xs);
   font-family: var(--font-mono);
-  color: color-mix(in srgb, var(--type-color, var(--text-muted)) 50%, var(--text-muted));
+  color: var(--text2);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   line-height: var(--leading-tight);
@@ -133,8 +133,8 @@
 
 /* Glowing (connected) */
 .glowing .card {
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.3);
-  border-color: var(--accent-highlight);
+  box-shadow: 0 0 0 1px var(--brand), 0 0 14px color-mix(in srgb, var(--brand) 45%, transparent);
+  border-color: var(--brand);
 }
 
 /* Pin icon */
@@ -343,9 +343,9 @@
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  border-left: 2px solid color-mix(in srgb, var(--type-color) 40%, transparent);
+  background: var(--node-fill);
+  border: 1px solid var(--node-line);
+  border-left: 3px solid var(--type-color, var(--brand));
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);

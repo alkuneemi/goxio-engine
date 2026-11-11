@@ -84,8 +84,8 @@
 /* Edge labels */
 
 .labelBg {
-  fill: var(--bg-elevated);
-  stroke: var(--border-default);
+  fill: var(--node-fill);
+  stroke: var(--node-line);
   stroke-width: 1;
   transition: fill var(--transition-fast), stroke var(--transition-fast);
 }
@@ -98,7 +98,7 @@
 .labelText {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  fill: var(--text-secondary);
+  fill: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }

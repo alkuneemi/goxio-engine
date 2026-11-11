@@ -3,8 +3,8 @@
   width: 100%;
   height: 100%;
   background:
-    radial-gradient(ellipse at 50% 50%, transparent 0%, rgba(0, 0, 0, 0.4) 100%),
-    var(--bg-void);
+    radial-gradient(ellipse at 50% 50%, transparent 46%, var(--canvas-vignette) 100%),
+    var(--chrome);
   overflow: hidden;
 }
 
@@ -87,6 +87,11 @@
 }
 
 /* React Flow overrides */
+
+.canvas :global(.react-flow),
+.canvas :global(.react-flow__background) {
+  background: transparent;
+}
 
 .canvas :global(svg) {
   max-width: none;
@@ -171,8 +176,8 @@
 /* MiniMap */
 
 .minimap {
-  background: var(--bg-primary) !important;
-  border: 1px solid var(--border-default) !important;
+  background: var(--minimap-bg) !important;
+  border: 1px solid var(--stroke) !important;
   border-radius: var(--radius-lg) !important;
   box-shadow: var(--shadow-md) !important;
   overflow: hidden;

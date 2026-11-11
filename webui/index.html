@@ -2,6 +2,21 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        var key = 'goxio-theme';
+        var choice = 'dark';
+        try {
+          var stored = localStorage.getItem(key);
+          if (stored === 'light' || stored === 'dark' || stored === 'system') choice = stored;
+        } catch (e) {}
+        var mode = choice === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : (choice === 'light' ? 'light' : 'dark');
+        var root = document.documentElement;
+        root.setAttribute('data-theme', mode);
+        root.setAttribute('data-theme-choice', choice);
+        root.style.colorScheme = mode;
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

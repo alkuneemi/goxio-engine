@@ -7,6 +7,7 @@ import styles from './PortalGate.module.css';
 import { AccountChromeProvider, AccountMenu } from './AccountChrome';
 import ClientHeader from './ClientHeader';
 import ServerCard from './ServerCard';
+import ThemeSwitch from './ThemeSwitch';
 import {
   applyPortalLang,
   portalCopy,
@@ -277,9 +278,12 @@ export default function PortalGate({ children }: PortalGateProps) {
     const signup = mode === 'signup';
     return (
       <div className={styles.gate}>
-        <button type="button" className={styles.lang} onClick={switchLang}>
-          {t.langOther}
-        </button>
+        <div className={styles.gateTools}>
+          <ThemeSwitch variant="compact" />
+          <button type="button" className={styles.lang} onClick={switchLang}>
+            {t.langOther}
+          </button>
+        </div>
         <form className={styles.card} onSubmit={signup ? submitSignup : submit}>
           <div className={styles.brand}>
             <img className={styles.logo} src="/omxio-icon.png" width={72} height={72} alt="" />
@@ -421,6 +425,7 @@ export default function PortalGate({ children }: PortalGateProps) {
       </button>
       <h1 id="goxio-settings-title" className={styles.settingsTitle}>{t.settings}</h1>
       <p className={styles.clientLead}>{t.settingsLead}</p>
+      <ThemeSwitch variant="full" />
       {profile && (
         <ClientHeader
           profile={profile}

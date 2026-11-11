@@ -33,6 +33,7 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .appName {
@@ -671,11 +672,11 @@
 }
 
 .brandGo {
-  color: #00D4C8;
+  color: var(--logo-o);
 }
 
 .brandXio {
-  color: #ffffff;
+  color: var(--text);
 }
 
 .sourceLink {

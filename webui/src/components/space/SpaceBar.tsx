@@ -1,7 +1,6 @@
 import type { Graph, SpaceActivity, SpaceSummary } from '../../types';
 import type { Filters } from '../../utils';
 import { SPACE_ACTIVITIES, hasSpaceFilter, isSpaceNode } from '../../utils';
-import { api } from '../../api';
 import { useAccountChrome } from '../portal/useAccountChrome';
 import styles from './SpaceBar.module.css';
 
@@ -105,13 +104,6 @@ export default function SpaceBar({ graph, summary, filters, onFilterChange, view
           ? `${summary.status || summary.source || 'space'} · ${summary.host || 'server'} · read-only${summary.listing_complete === false ? ' · inspect incomplete' : ''}${typeof summary.volumes === 'number' ? ` · ${summary.volumes} volumes` : ''}${typeof summary.images === 'number' ? ` · ${summary.images} images` : ''}${typeof summary.folders === 'number' ? ` · ${summary.folders} folders` : ''}${summary.sizes_partial ? ` · ${summary.sizes_partial} sizing in progress` : ''}${summary.sizes_timeout ? ` · ${summary.sizes_timeout} size timeouts` : ''}${summary.sizes_pending ? ` · ${summary.sizes_pending} sizes pending` : ''}${summary.sizes_unreadable ? ` · ${summary.sizes_unreadable} unreadable` : ''}`
           : 'read-only'}
       </span>
-      <button
-        type="button"
-        className={styles.clear}
-        onClick={() => { void api.logout().then(() => window.location.assign('/')); }}
-      >
-        Sign out
-      </button>
     </div>
   );
 }

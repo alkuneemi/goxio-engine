@@ -9,7 +9,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 16px;
-  background: #101414;
+  background: var(--sidebar);
   border-bottom: 1px solid var(--border-default);
   overflow-x: auto;
 }
@@ -52,8 +52,8 @@
 }
 
 .on {
-  color: #041716;
-  background: #00D4C8;
+  color: var(--on-brand);
+  background: var(--brand);
 }
 
 .field {
@@ -89,9 +89,9 @@
 .chip.core { color: var(--activity-core); }
 
 .chip.on, .views .on {
-  color: #041716;
-  background: #00D4C8;
-  border-color: #00D4C8;
+  color: var(--on-brand);
+  background: var(--brand);
+  border-color: var(--brand);
 }
 
 .clear {

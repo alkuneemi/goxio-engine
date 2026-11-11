@@ -13,7 +13,7 @@
   width: min(440px, 100%);
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
-  border-top: 2px solid #00D4C8;
+  border-top: 2px solid var(--brand);
   border-radius: var(--radius-md);
   padding: 16px;
   color: var(--text-primary);
@@ -34,7 +34,7 @@
 }
 
 .warn { color: var(--text-secondary); }
-.note { color: #00D4C8; }
+.note { color: var(--brand); }
 .error { color: var(--status-unhealthy); }
 
 .fields, .confirm {
@@ -77,9 +77,9 @@ input {
 }
 
 .go {
-  background: #00D4C8 !important;
-  color: #041716 !important;
-  border-color: #00D4C8 !important;
+  background: var(--btn-bg) !important;
+  color: var(--btn-text) !important;
+  border-color: var(--btn-bg) !important;
   font-weight: 650;
 }
 

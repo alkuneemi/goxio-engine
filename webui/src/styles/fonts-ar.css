@@ -12,9 +12,15 @@
   --font-head-ar:"Noto Kufi Arabic";
 }
 
+html[dir=rtl],
+html:lang(ar){
+  letter-spacing:normal;
+}
+
 html[dir=rtl] body,
 body:lang(ar){
   font-family:var(--font-body-ar),var(--font-sans);
+  letter-spacing:normal;
 }
 
 html[dir=rtl] :is(h1,h2,h3),
