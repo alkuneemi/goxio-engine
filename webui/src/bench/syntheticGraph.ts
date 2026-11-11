@@ -111,6 +111,95 @@ export function buildScaleGraph(): Graph {
   return { nodes, edges };
 }
 
+/**
+ * Real KSA inventory shape: 723 nodes, 1168 edges, a 418-folder cluster and a
+ * 106-volume cluster under one mount.
+ */
+export function buildKsaGraph(): Graph {
+  const nodes: GraphNode[] = [];
+  const edges: Graph['edges'] = [];
+  let edgeN = 0;
+  const link = (source: string, target: string, type = 'contains', label = 'CONTAINS') => {
+    edges.push({ id: `e-${edgeN++}`, source, target, type, label });
+  };
+
+  nodes.push(node('disk-sda', 'disk', 'sda', { kind: 'device-group', physical_disk: false }));
+  nodes.push(node(HUB_ID, 'disk', '/dev/sda1', { kind: 'mount', path: '/' }, 'disk-sda'));
+  nodes.push(node('disk-sdb', 'disk', '/dev/sdb1', { kind: 'mount', path: '/var' }, 'disk-sda'));
+  nodes.push(node('disk-sdc', 'disk', '/dev/sdc1', { kind: 'mount', path: '/home' }, 'disk-sda'));
+  link('disk-sda', HUB_ID);
+  link('disk-sda', 'disk-sdb');
+  link('disk-sda', 'disk-sdc');
+
+  for (let i = 0; i < 418; i++) {
+    const id = `folder-${i}`;
+    nodes.push(node(id, 'volume', `/var/lib/docker/volumes/data-${i}/_data`, {
+      kind: 'folder',
+      path: `/var/lib/docker/volumes/data-${i}/_data`,
+      size_bytes: (418 - i) * 1024 * 1024,
+    }, HUB_ID));
+    link(HUB_ID, id);
+  }
+  for (let i = 0; i < 5; i++) {
+    const id = `folder-extra-${i}`;
+    nodes.push(node(id, 'volume', `/var/log/extra-${i}`, { kind: 'folder', path: `/var/log/extra-${i}`, size_bytes: 1024 }, 'disk-sdb'));
+    link('disk-sdb', id);
+  }
+  for (let i = 0; i < 106; i++) {
+    const id = `volume-${i}`;
+    nodes.push(node(id, 'volume', `vol-${i}`, { kind: 'volume', path: `/var/lib/docker/volumes/vol-${i}/_data`, size_bytes: (106 - i) * 4096 }, HUB_ID));
+    link(HUB_ID, id);
+  }
+  for (let i = 0; i < 46; i++) {
+    const id = `image-${i}`;
+    nodes.push(node(id, 'volume', `ghcr.io/mailcow/nginx:1.30.4-${i}`, {
+      kind: 'image',
+      thumbnail: THUMB,
+      digest: `sha256:${i.toString(16).padStart(8, '0')}`,
+    }, HUB_ID));
+    link(HUB_ID, id);
+  }
+  for (let i = 0; i < 112; i++) {
+    const id = `container-${i}`;
+    nodes.push(node(id, 'container', `ctr-${i}`, { kind: 'container' }, `volume-${i % 106}`));
+    link(`volume-${i % 106}`, id);
+  }
+  for (let i = 0; i < 20; i++) {
+    const id = `database-${i}`;
+    nodes.push(node(id, 'database', `db-${i}`, { kind: 'database' }, `container-${i}`));
+    link(`container-${i}`, id);
+  }
+  for (let i = 0; i < 6; i++) {
+    nodes.push(node(`account-${i}`, 'github_account', `acct-${i}`, { github_account: `acct-${i}` }));
+  }
+  for (let i = 0; i < 6; i++) {
+    nodes.push(node(`repo-${i}`, 'repo', `repo-${i}`, { github_account: `acct-${i}` }));
+    link(`account-${i}`, `repo-${i}`, 'owns', 'OWNS');
+  }
+
+  const seen = new Set<string>();
+  let n = 0;
+  while (edges.length < 1168 && n < 100000) {
+    const container = n % 112;
+    const folder = Math.floor(n / 112) % 418;
+    n += 1;
+    const key = `${container}:${folder}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    link(`container-${container}`, `folder-${folder}`, 'routes_to', 'USES');
+  }
+
+  if (nodes.length !== 723 || edges.length !== 1168) {
+    throw new Error(`ksa graph is ${nodes.length} nodes / ${edges.length} edges, expected 723 / 1168`);
+  }
+  const folderCluster = edges.filter(edge => edge.source === HUB_ID && edge.target.startsWith('folder-')).length;
+  const volumeCluster = edges.filter(edge => edge.source === HUB_ID && edge.target.startsWith('volume-')).length;
+  if (folderCluster !== 418 || volumeCluster !== 106) {
+    throw new Error(`ksa clusters folders=${folderCluster} volumes=${volumeCluster}`);
+  }
+  return { nodes, edges };
+}
+
 export function scaleGraphStats(graph: Graph) {
   const hubChildren = graph.edges.filter(e => e.source === HUB_ID).length;
   return {

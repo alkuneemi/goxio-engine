@@ -199,6 +199,35 @@ try {
   const forceLayoutMs = Math.round(await page.evaluate(() => window.__timeForceLayout()));
   const longTasks = await page.evaluate(() => window.__longTasks);
 
+  // After the timed pans: zoom onto a node and confirm CONTAINS labels appear.
+  const anchor = page.locator('.react-flow__node').first();
+  const anchorBox = await anchor.boundingBox();
+  if (anchorBox) {
+    await page.mouse.move(anchorBox.x + anchorBox.width / 2, anchorBox.y + anchorBox.height / 2);
+  }
+  let highScale = 0;
+  for (let i = 0; i < 24 && highScale < 0.9; i++) {
+    await page.mouse.wheel(0, -180);
+    await page.waitForTimeout(40);
+    highScale = await page.evaluate(() => {
+      const transform = document.querySelector('.react-flow__viewport')?.style?.transform || '';
+      const match = transform.match(/scale\(([^)]+)\)/);
+      return match ? Number(match[1]) : 0;
+    });
+  }
+  await page.waitForTimeout(250);
+  const highZoom = await page.evaluate(() => {
+    const labels = [...document.querySelectorAll('.react-flow__edge text')].map((n) => n.textContent);
+    const transform = document.querySelector('.react-flow__viewport')?.style?.transform || '';
+    const match = transform.match(/scale\(([^)]+)\)/);
+    return {
+      scale: match ? Number(match[1]) : 0,
+      detail: document.querySelector('[data-detail]')?.getAttribute('data-detail') || '',
+      containsLabels: labels.filter((t) => (t || '').includes('CONTAINS')).length,
+      edgeLabels: labels.length,
+    };
+  });
+
   const report = {
     url: URL_,
     firstNodeMs,
@@ -208,6 +237,7 @@ try {
     pan,
     zoom,
     panAfterZoom,
+    highZoom,
   };
   const json = JSON.stringify(report, null, 2);
   console.log(json);

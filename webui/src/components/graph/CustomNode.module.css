@@ -8,6 +8,11 @@
   animation: scale-in 250ms var(--ease-out-expo) both;
 }
 
+.showMore {
+  width: 100%;
+  text-align: start;
+}
+
 /* Card body */
 .card {
   display: flex;

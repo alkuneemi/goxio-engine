@@ -24,7 +24,7 @@ import CustomEdge, { type CustomEdgeData } from './CustomEdge';
 import { EdgeMarkerDefs } from './EdgeMarkerDefs';
 import { EmptyState } from '../ui';
 import type { Graph, GraphEdge } from '../../types';
-import { calculatePriority, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, collapseFanout, debounce, detailLevel, placeMissingNodes, worstHealth, type NamespaceSummary } from '../../utils';
+import { calculatePriority, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, CLUSTER_PAGE, collapseFanout, COMPACT_ZOOM_BELOW, countVisibleEdges, debounce, detailLevel, FANOUT_CLUSTER_ABOVE, FULL_DETAIL_ZOOM, placeMissingNodes, worstHealth, type NamespaceSummary } from '../../utils';
 import { useLayoutPersistence } from '../../hooks';
 import { useForceSimulation } from '../../hooks/useForceSimulation';
 import type { LayoutMode } from '../HeaderBar';
@@ -207,6 +207,7 @@ function computeLayout(
   // synchronous 300-tick simulation must not run during render.
   presetPositions?: Map<string, { x: number; y: number }> | null,
   onToggleCluster?: (clusterKey: string) => void,
+  onShowMore?: (clusterKey: string) => void,
 ): {
   nodes: Node<CustomNodeData>[];
   edges: Edge<CustomEdgeData>[];
@@ -422,7 +423,9 @@ function computeLayout(
         clusterKey: typeof node.metadata?.clusterKey === 'string' ? node.metadata.clusterKey : undefined,
         clusterKind: typeof node.metadata?.clusterKind === 'string' ? node.metadata.clusterKind : undefined,
         clusterExpanded: node.metadata?.clusterExpanded === true,
+        isShowMore: node.metadata?.showMore === true,
         onToggleCluster: node.metadata?.cluster === true ? onToggleCluster : undefined,
+        onShowMore: node.metadata?.showMore === true ? onShowMore : undefined,
         ...(node.type === 'namespace' ? namespaceData(node.id, node.health) : {}),
       },
     };
@@ -565,15 +568,31 @@ function GraphCanvasInner({
   }, [isLoading, error, graphIsEmpty]);
 
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [shownCounts, setShownCounts] = useState<Record<string, number>>({});
   const expandedSet = useMemo(() => new Set(expandedKeys), [expandedKeys]);
+  const shownMap = useMemo(() => new Map(Object.entries(shownCounts)), [shownCounts]);
   const toggleCluster = useCallback((key: string) => {
-    setExpandedKeys(prev => (prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key].sort()));
+    setExpandedKeys(prev => {
+      if (prev.includes(key)) {
+        setShownCounts(counts => {
+          if (!(key in counts)) return counts;
+          const next = { ...counts };
+          delete next[key];
+          return next;
+        });
+        return prev.filter(item => item !== key);
+      }
+      return [...prev, key].sort();
+    });
+  }, []);
+  const showMoreCluster = useCallback((key: string) => {
+    setShownCounts(prev => ({ ...prev, [key]: (prev[key] ?? CLUSTER_PAGE) + CLUSTER_PAGE }));
   }, []);
   // Collapse hub fan-out before layout. Swimlane already simplifies containment.
   const fanout = useMemo(() => {
     if (!graph || layoutMode === 'swimlane') return null;
-    return collapseFanout(graph, expandedSet);
-  }, [graph, expandedSet, layoutMode]);
+    return collapseFanout(graph, expandedSet, FANOUT_CLUSTER_ABOVE, shownMap, selectedNodeId);
+  }, [graph, expandedSet, shownMap, selectedNodeId, layoutMode]);
   const displayGraph = fanout?.graph ?? graph;
   // Selecting a node that lives inside a collapsed hub opens that hub. Adjusted
   // during render so the expanded graph is what layout sees on this pass.
@@ -620,9 +639,10 @@ function GraphCanvasInner({
       onToggleCollapse,
       layoutPositions,
       toggleCluster,
+      showMoreCluster,
     );
     return { layoutNodes: nodes, layoutEdges: edges, detailEdges };
-  }, [displayGraph, layoutMode, savedPositions, viewportSize, namespaces, onToggleCollapse, layoutPositions, toggleCluster]);
+  }, [displayGraph, layoutMode, savedPositions, viewportSize, namespaces, onToggleCollapse, layoutPositions, toggleCluster, showMoreCluster]);
 
   // Latest layout + size for deferred fits (they run from timers).
   const fitInputRef = useRef({ layoutNodes, viewportSize });
@@ -689,11 +709,43 @@ function GraphCanvasInner({
     setEdges(flowEdges);
   }, [flowNodes, flowEdges, setNodes, setEdges]);
 
-  const edgeCount = flowEdges.length;
-  const detail = useStore(useCallback(
-    (state: { transform: [number, number, number] }) => detailLevel(state.transform[2], edgeCount),
-    [edgeCount],
-  ));
+  const detail = useStore(useCallback((state: {
+    transform: [number, number, number];
+    width: number;
+    height: number;
+    edges: { source: string; target: string }[];
+    nodeLookup: Map<string, {
+      measured?: { width?: number; height?: number };
+      internals?: { positionAbsolute?: { x: number; y: number } };
+    }>;
+  }) => {
+    const zoom = state.transform[2];
+    if (!Number.isFinite(zoom)) return 'compact' as const;
+    if (zoom >= FULL_DETAIL_ZOOM) return 'full' as const;
+    if (zoom < COMPACT_ZOOM_BELOW) return 'compact' as const;
+    if (state.nodeLookup.size === 0 || state.width <= 0 || state.height <= 0) {
+      return detailLevel(zoom, state.edges.length);
+    }
+    const [tx, ty] = state.transform;
+    const view = {
+      left: -tx / zoom,
+      top: -ty / zoom,
+      right: (-tx + state.width) / zoom,
+      bottom: (-ty + state.height) / zoom,
+    };
+    const boxes = new Map<string, { x: number; y: number; w: number; h: number }>();
+    for (const [id, node] of state.nodeLookup) {
+      const point = node.internals?.positionAbsolute;
+      if (!point) continue;
+      boxes.set(id, {
+        x: point.x,
+        y: point.y,
+        w: node.measured?.width ?? 180,
+        h: node.measured?.height ?? 64,
+      });
+    }
+    return detailLevel(zoom, countVisibleEdges(state.edges, boxes, view));
+  }, []));
 
   // Fit once when the graph first arrives and whenever fitKey changes (the
   // caller bumps it for filter changes). Not on every node-count change:
@@ -739,14 +791,18 @@ function GraphCanvasInner({
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
-      const data = node.data as { isCluster?: boolean; clusterKey?: string };
+      const data = node.data as { isCluster?: boolean; clusterKey?: string; isShowMore?: boolean };
+      if (data.isShowMore && data.clusterKey) {
+        showMoreCluster(data.clusterKey);
+        return;
+      }
       if (data.isCluster && data.clusterKey) {
         toggleCluster(data.clusterKey);
         return;
       }
       onNodeSelect(node.id);
     },
-    [onNodeSelect, toggleCluster]
+    [onNodeSelect, showMoreCluster, toggleCluster]
   );
 
   const handleMoveStart = useCallback(() => {

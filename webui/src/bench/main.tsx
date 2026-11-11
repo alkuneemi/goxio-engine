@@ -3,9 +3,10 @@ import { createRoot } from 'react-dom/client';
 import '../index.css';
 import { GraphCanvas } from '../components/graph';
 import { calculateForceDirectedLayout } from '../utils/forceDirectedLayout';
-import { buildScaleGraph, scaleGraphStats } from './syntheticGraph';
+import { buildKsaGraph, buildScaleGraph, scaleGraphStats } from './syntheticGraph';
 
-const graph = buildScaleGraph();
+const profile = new URLSearchParams(window.location.search).get('profile');
+const graph = profile === 'ksa' ? buildKsaGraph() : buildScaleGraph();
 const stats = scaleGraphStats(graph);
 
 declare global {

@@ -132,3 +132,74 @@ func TestListServersSummarizesSnapshotAndMarksSharedAddress(t *testing.T) {
 		t.Fatalf("older fallback counts %+v", list[1])
 	}
 }
+
+func TestServerSummaryKeepsVolumeAndFolderCounts(t *testing.T) {
+	p, err := Open(t.TempDir(), testOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acct, err := p.CreateAccount("ksa", "password-long-enough")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _, err := p.AddServer(acct.ID, "KSA", "13.140.208.109")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := space.Snapshot{
+		CollectedAt:      time.Date(2026, 11, 11, 3, 29, 0, 0, time.UTC),
+		ListedContainers: 112,
+		Databases:        20,
+		Volumes:          106,
+		Folders:          423,
+		Images:           46,
+	}
+	if err := p.SaveSnapshot(acct.ID, srv.ID, snap); err != nil {
+		t.Fatal(err)
+	}
+	list, err := p.ListServers(acct.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("len %d", len(list))
+	}
+	if list[0].Volumes != 106 || list[0].Folders != 423 {
+		t.Fatalf("volumes=%d folders=%d", list[0].Volumes, list[0].Folders)
+	}
+	if list[0].Containers != 112 || list[0].Databases != 20 || list[0].Images != 46 {
+		t.Fatalf("other counts %+v", list[0])
+	}
+}
+
+func TestServerSummaryCountsFolderNodesWhenFieldIsEmpty(t *testing.T) {
+	p, err := Open(t.TempDir(), testOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acct, err := p.CreateAccount("ksa", "password-long-enough")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _, err := p.AddServer(acct.ID, "KSA", "13.140.208.109")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := space.Snapshot{
+		Volumes: 106,
+		Nodes: []nodes.Node{
+			{Id: "vol", Type: "volume", Name: "vol", Metadata: map[string]any{"kind": "volume"}},
+			{Id: "dir", Type: "volume", Name: "dir", Metadata: map[string]any{"kind": "folder"}},
+		},
+	}
+	if err := p.SaveSnapshot(acct.ID, srv.ID, snap); err != nil {
+		t.Fatal(err)
+	}
+	list, err := p.ListServers(acct.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list[0].Volumes != 106 || list[0].Folders != 1 {
+		t.Fatalf("volumes=%d folders=%d", list[0].Volumes, list[0].Folders)
+	}
+}

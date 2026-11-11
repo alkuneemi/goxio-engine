@@ -44,11 +44,29 @@ func fillServerSummary(view *ServerView, snap space.Snapshot) {
 	if view.Volumes == 0 {
 		view.Volumes = countNodes(snap, "volume")
 	}
+	view.Folders = snap.Folders
+	if view.Folders == 0 {
+		view.Folders = countFolders(snap)
+	}
 	view.Images = snap.Images
 	if view.Images == 0 {
 		view.Images = countNodes(snap, "image")
 	}
 	view.DiskUsedBytes, view.DiskSizeBytes = diskUsage(snap)
+}
+
+func countFolders(snap space.Snapshot) int {
+	n := 0
+	for _, node := range snap.Nodes {
+		if node.Type != "volume" || node.Metadata == nil {
+			continue
+		}
+		switch metaString(node.Metadata["kind"]) {
+		case "folder", "log", "backup", "runtime":
+			n++
+		}
+	}
+	return n
 }
 
 func countNodes(snap space.Snapshot, typ string) int {

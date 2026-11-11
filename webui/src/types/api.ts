@@ -24,6 +24,7 @@ export interface PortalServer {
   containers?: number;
   databases?: number;
   volumes?: number;
+  folders?: number;
   images?: number;
   disk_used_bytes?: number;
   disk_size_bytes?: number;

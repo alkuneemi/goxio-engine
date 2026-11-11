@@ -4,6 +4,9 @@ import { worstHealth } from './graphView';
 /** Collapse a parent's children when more than this many share a kind. */
 export const FANOUT_CLUSTER_ABOVE = 50;
 
+/** How many members an expanded cluster reveals before "show more". */
+export const CLUSTER_PAGE = 40;
+
 export interface FanoutClusterInfo {
   key: string;
   parentId: string;
@@ -46,16 +49,37 @@ function canCluster(node: GraphNode): boolean {
   return true;
 }
 
+function memberSize(node: GraphNode): number {
+  const raw = node.metadata?.size_bytes;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function compareMembers(a: GraphNode, b: GraphNode): number {
+  const bySize = memberSize(b) - memberSize(a);
+  if (bySize !== 0) return bySize;
+  const byName = a.name.localeCompare(b.name);
+  if (byName !== 0) return byName;
+  return a.id.localeCompare(b.id);
+}
+
 /**
  * Replace a huge fan-out (a disk with hundreds of CONTAINS edges, for example)
- * with one cluster node per child kind. Expanding a key puts those children
- * back, parented to the cluster so the hub itself stays a single edge.
- * Descendants of a collapsed member (a container on a hidden volume) hide too.
+ * with one cluster node per child kind. Expanding a key reveals the largest
+ * members a page at a time, parented to the cluster so they can sit around it.
+ * The remainder is a single "show more (N)" node. Descendants of a collapsed
+ * member (a container on a hidden volume) hide too.
  */
 export function collapseFanout(
   graph: Graph,
   expanded: ReadonlySet<string>,
   threshold = FANOUT_CLUSTER_ABOVE,
+  shown?: ReadonlyMap<string, number>,
+  focusId?: string | null,
 ): FanoutResult {
   const nodeById = new Map(graph.nodes.map(n => [n.id, n]));
   const childrenOf = new Map<string, GraphNode[]>();
@@ -86,8 +110,11 @@ export function collapseFanout(
   const clusters: FanoutClusterInfo[] = [];
   const memberCluster = new Map<string, string>();
   const hidden = new Set<string>();
+  const pinnedVisible = new Set<string>();
+  const moved = new Set<string>();
   const suppressContains = new Set<string>();
   const extraNodes: GraphNode[] = [];
+  const revealed: GraphNode[] = [];
   const extraEdges: GraphEdge[] = [];
 
   for (const [parentId, children] of childrenOf) {
@@ -145,11 +172,48 @@ export function collapseFanout(
       });
 
       if (expanded.has(key)) {
+        const sorted = [...members].sort(compareMembers);
+        const limit = shown?.get(key) ?? CLUSTER_PAGE;
+        const visible = sorted.slice(0, Math.min(limit, sorted.length));
+        if (focusId) {
+          const focus = sorted.find(member => member.id === focusId);
+          if (focus && !visible.some(member => member.id === focus.id)) visible.push(focus);
+        }
+        const visibleIds = new Set(visible.map(member => member.id));
         for (const member of members) {
+          if (!visibleIds.has(member.id)) hidden.add(member.id);
+        }
+        for (const member of visible) {
+          pinnedVisible.add(member.id);
+          moved.add(member.id);
+          revealed.push({ ...member, parent: key });
           extraEdges.push({
             id: `edge:${key}:${member.id}`,
             source: key,
             target: member.id,
+            type: 'contains',
+            label: 'CONTAINS',
+          });
+        }
+        const remaining = sorted.length - visible.length;
+        if (remaining > 0) {
+          const moreId = `${key}:more`;
+          extraNodes.push({
+            id: moreId,
+            type: members[0].type,
+            name: `show more (${remaining})`,
+            parent: key,
+            health: 'unknown',
+            metadata: {
+              showMore: true,
+              clusterKey: key,
+              remaining,
+            },
+          });
+          extraEdges.push({
+            id: `edge:${moreId}`,
+            source: key,
+            target: moreId,
             type: 'contains',
             label: 'CONTAINS',
           });
@@ -181,7 +245,7 @@ export function collapseFanout(
   while (grew) {
     grew = false;
     for (const node of graph.nodes) {
-      if (hidden.has(node.id)) continue;
+      if (hidden.has(node.id) || pinnedVisible.has(node.id)) continue;
       if (node.parent && hidden.has(node.parent)) {
         hidden.add(node.id);
         grew = true;
@@ -195,7 +259,7 @@ export function collapseFanout(
     }
   }
 
-  const nodes = graph.nodes.filter(node => !hidden.has(node.id)).concat(extraNodes);
+  const nodes = graph.nodes.filter(node => !hidden.has(node.id) && !moved.has(node.id)).concat(revealed, extraNodes);
   const edges = graph.edges.filter(edge => {
     if (hidden.has(edge.source) || hidden.has(edge.target)) return false;
     if (edge.type === 'contains' && suppressContains.has(`${edge.source}\0${edge.target}`)) return false;

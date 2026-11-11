@@ -103,6 +103,7 @@ type ServerView struct {
 	Containers     int       `json:"containers"`
 	Databases      int       `json:"databases"`
 	Volumes        int       `json:"volumes"`
+	Folders        int       `json:"folders"`
 	Images         int       `json:"images"`
 	DiskUsedBytes  int64     `json:"disk_used_bytes"`
 	DiskSizeBytes  int64     `json:"disk_size_bytes"`
