@@ -31,7 +31,9 @@ export type CustomNodeData = Record<string, unknown> & {
   clusterKey?: string;
   clusterKind?: string;
   clusterExpanded?: boolean;
+  isShowMore?: boolean;
   onToggleCluster?: (clusterKey: string) => void;
+  onShowMore?: (clusterKey: string) => void;
 };
 
 type CustomNodeType = Node<CustomNodeData>;
@@ -517,6 +519,29 @@ function CustomNode({ data, selected }: NodeProps<CustomNodeType>) {
   const showPriorityBorder = priority === 'critical' || priority === 'high';
   const category = TYPE_CATEGORY[type] || 'service';
   const thumbnail = typeof data.metadata?.thumbnail === 'string' ? data.metadata.thumbnail : undefined;
+
+  if (data.isShowMore && data.clusterKey) {
+    return (
+      <div
+        className={`${styles.node} ${selected ? styles.selected : ''}`}
+        style={{ '--type-color': `var(--type-${category})` } as React.CSSProperties}
+        data-show-more="true"
+      >
+        <Handle type="target" position={Position.Top} className={styles.handle} id="top" />
+        <Handle type="source" position={Position.Bottom} className={styles.handle} id="bottom" />
+        <button
+          type="button"
+          className={`${styles.card} ${styles.showMore} nodrag nopan`}
+          onClick={event => {
+            event.stopPropagation();
+            data.onShowMore?.(data.clusterKey!);
+          }}
+        >
+          <span className={styles.name}>{name}</span>
+        </button>
+      </div>
+    );
+  }
 
   if (data.isCluster && data.clusterKey) {
     return (

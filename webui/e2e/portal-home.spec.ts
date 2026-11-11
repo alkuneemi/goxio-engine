@@ -26,7 +26,8 @@ function server(id: string, name: string) {
     ssh_fingerprint: 'SHA256:examplefingerprint',
     containers: 22,
     databases: 146,
-    volumes: 64,
+    volumes: 106,
+    folders: 423,
     images: 201,
     disk_used_bytes: 353 * 1024 ** 3,
     disk_size_bytes: 386 * 1024 ** 3,
@@ -217,6 +218,17 @@ test.describe('post-login home', () => {
     await page.getByRole('button', { name: 'Map', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Map', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.react-flow__node').first()).toBeVisible();
+  });
+
+  test('server card labels volumes and folders separately', async ({ page }) => {
+    await mockPortal(page, true);
+    await page.goto('http://127.0.0.1:5173/');
+    const card = page.locator('article').first();
+    await expect(card.locator('li', { hasText: 'وحدات التخزين' })).toContainText('106');
+    await expect(card.locator('li', { hasText: 'المجلدات' })).toContainText('423');
+    await page.getByRole('button', { name: 'English' }).click();
+    await expect(card.locator('li', { hasText: 'Volumes' })).toContainText('106');
+    await expect(card.locator('li', { hasText: 'Folders' })).toContainText('423');
   });
 
   test('an authenticated visit to the root opens the server cards', async ({ page }) => {

@@ -1,8 +1,10 @@
+import type { ReactElement } from 'react';
 import type { PortalServer } from '../../types';
 import styles from './PortalGate.module.css';
 import ServerSSHKey from './ServerSSHKey';
 import { formatBytes, formatWhen, hasStoredSSHKey } from './format';
 import type { PortalCopy, PortalLang } from './portalCopy';
+import { serverStatItems } from './serverStats';
 
 function BoxIcon() {
   return (
@@ -25,6 +27,13 @@ function VolumeIcon() {
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
       <rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
       <path fill="none" stroke="currentColor" strokeWidth="1.8" d="M8 10h8M8 14h5" />
+    </svg>
+  );
+}
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="1.8" d="M3 7.5h6l2 2H21v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-11.5z" />
     </svg>
   );
 }
@@ -87,12 +96,14 @@ export default function ServerCard({ server, lang, copy: t, onOpen, onUpdated }:
   const used = formatBytes(server.disk_used_bytes);
   const total = formatBytes(server.disk_size_bytes);
   const snapshotAt = formatWhen(server.collected_at || server.updated_at, lang);
-  const stats = [
-    { key: 'containers', icon: <BoxIcon />, label: t.statContainers, value: server.containers ?? 0 },
-    { key: 'databases', icon: <DbIcon />, label: t.statDatabases, value: server.databases ?? 0 },
-    { key: 'volumes', icon: <VolumeIcon />, label: t.statVolumes, value: server.volumes ?? 0 },
-    { key: 'images', icon: <ImageIcon />, label: t.statImages, value: server.images ?? 0 },
-  ];
+  const icons: Record<string, ReactElement> = {
+    containers: <BoxIcon />,
+    databases: <DbIcon />,
+    volumes: <VolumeIcon />,
+    folders: <FolderIcon />,
+    images: <ImageIcon />,
+  };
+  const stats = serverStatItems(server, t).map(stat => ({ ...stat, icon: icons[stat.key] }));
 
   return (
     <article className={styles.serverCard}>

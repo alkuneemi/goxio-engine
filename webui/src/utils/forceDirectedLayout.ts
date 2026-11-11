@@ -87,47 +87,66 @@ export function calculateForceDirectedLayout(
   return positions;
 }
 
+const RING_SLOTS = 8;
+
+function placeLoose(ids: string[], positions: Map<string, FlowPosition>) {
+  ids.forEach((id, index) => {
+    const angle = (index / Math.max(ids.length, 1)) * Math.PI * 2;
+    const radius = 280 + (index % 8) * 36;
+    positions.set(id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
+  });
+}
+
+/** Concentric rings centered on the parent, so a page of members is not a downward band. */
+function placeAround(origin: FlowPosition, ids: string[], positions: Map<string, FlowPosition>) {
+  ids.forEach((id, index) => {
+    const ring = Math.floor(index / RING_SLOTS);
+    const slot = index % RING_SLOTS;
+    const count = Math.min(RING_SLOTS, ids.length - ring * RING_SLOTS);
+    const radius = 320 + ring * 230;
+    const angle = (slot / Math.max(count, 1)) * Math.PI * 2 - Math.PI / 2;
+    positions.set(id, {
+      x: origin.x + Math.cos(angle) * radius,
+      y: origin.y + Math.sin(angle) * radius,
+    });
+  });
+}
+
 /**
  * Give nodes that do not yet have a position somewhere to render before the
- * simulation moves them. Members of an expanded cluster land in a grid around
+ * simulation moves them. Members of an expanded cluster land in rings around
  * their parent so expanding does not need another simulation.
  */
 export function placeMissingNodes(
   nodes: { id: string; parent?: string }[],
   positions: Map<string, FlowPosition>,
 ): void {
-  const missing = nodes.filter(node => !positions.has(node.id));
-  if (missing.length === 0) return;
+  for (let pass = 0; pass < 4; pass++) {
+    const missing = nodes.filter(node => !positions.has(node.id));
+    if (missing.length === 0) return;
 
-  const around = new Map<string, string[]>();
-  const loose: string[] = [];
-  for (const node of missing) {
-    if (node.parent && positions.has(node.parent)) {
-      const list = around.get(node.parent);
-      if (list) list.push(node.id);
-      else around.set(node.parent, [node.id]);
-    } else {
-      loose.push(node.id);
+    const around = new Map<string, string[]>();
+    const loose: string[] = [];
+    for (const node of missing) {
+      if (node.parent && positions.has(node.parent)) {
+        const list = around.get(node.parent);
+        if (list) list.push(node.id);
+        else around.set(node.parent, [node.id]);
+      } else {
+        loose.push(node.id);
+      }
     }
-  }
 
-  loose.forEach((id, index) => {
-    const angle = (index / Math.max(loose.length, 1)) * Math.PI * 2;
-    const radius = 280 + (index % 8) * 36;
-    positions.set(id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-  });
+    if (around.size === 0) {
+      placeLoose(loose, positions);
+      return;
+    }
 
-  for (const [parentId, ids] of around) {
-    const origin = positions.get(parentId);
-    if (!origin) continue;
-    const cols = Math.ceil(Math.sqrt(ids.length));
-    ids.forEach((id, index) => {
-      const col = index % cols;
-      const row = Math.floor(index / cols);
-      positions.set(id, {
-        x: origin.x + (col - (cols - 1) / 2) * 210,
-        y: origin.y + 150 + row * 96,
-      });
-    });
+    for (const [parentId, ids] of around) {
+      const origin = positions.get(parentId);
+      if (!origin) continue;
+      placeAround(origin, ids, positions);
+    }
+    if (pass === 3 && loose.length > 0) placeLoose(loose, positions);
   }
 }
