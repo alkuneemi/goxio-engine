@@ -1,6 +1,7 @@
-import React, { memo } from 'react';
+import React, { memo, useContext } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { HealthStatus, NodeType, PriorityTier } from '../../types';
+import { GraphDetailContext } from './detailContext';
 import styles from './CustomNode.module.css';
 
 export type CustomNodeData = Record<string, unknown> & {
@@ -26,6 +27,11 @@ export type CustomNodeData = Record<string, unknown> & {
   healthCounts?: Record<HealthStatus, number>;
   collapsed?: boolean;
   onToggleCollapse?: (namespaceName: string) => void;
+  isCluster?: boolean;
+  clusterKey?: string;
+  clusterKind?: string;
+  clusterExpanded?: boolean;
+  onToggleCluster?: (clusterKey: string) => void;
 };
 
 type CustomNodeType = Node<CustomNodeData>;
@@ -489,11 +495,66 @@ function PodNodeContent({ data, selected }: { data: CustomNodeData; selected: bo
 
 // ── Main component ──────────────────────────────────────────────────────
 
+function NodeThumbnail({ src, show }: { src?: string; show: boolean }) {
+  if (!show || !src) return null;
+  return (
+    <img
+      className={styles.thumb}
+      src={src}
+      alt=""
+      width={28}
+      height={28}
+      loading="lazy"
+      decoding="async"
+    />
+  );
+}
+
 function CustomNode({ data, selected }: NodeProps<CustomNodeType>) {
+  const detail = useContext(GraphDetailContext);
   const { name, type, health, priority, isConnected, isPinned, justSaved, isGroup, isSwimlane } = data;
   const showGlow = isConnected && !selected;
   const showPriorityBorder = priority === 'critical' || priority === 'high';
   const category = TYPE_CATEGORY[type] || 'service';
+  const thumbnail = typeof data.metadata?.thumbnail === 'string' ? data.metadata.thumbnail : undefined;
+
+  if (data.isCluster && data.clusterKey) {
+    return (
+      <div
+        className={`${styles.node} ${selected ? styles.selected : ''}`}
+        style={{ '--type-color': `var(--type-${category})` } as React.CSSProperties}
+        data-cluster="true"
+      >
+        <Handle type="target" position={Position.Top} className={styles.handle} id="top" />
+        <Handle type="source" position={Position.Bottom} className={styles.handle} id="bottom" />
+        <div className={styles.card}>
+          <span className={`${styles.healthDot} ${styles[`health_${health}`]}`} />
+          <div className={styles.iconWrapper}>
+            <NodeIcon type={type} />
+          </div>
+          <div className={styles.info}>
+            <span className={styles.name} title={name}>{name}</span>
+            <span className={styles.type}>{data.clusterKind || type}</span>
+          </div>
+          <button
+            type="button"
+            className={`${styles.collapseToggle} nodrag nopan`}
+            aria-expanded={!!data.clusterExpanded}
+            aria-label={data.clusterExpanded ? `Collapse ${name}` : `Expand ${name}`}
+            title={data.clusterExpanded ? 'Collapse' : 'Expand'}
+            onClick={event => {
+              event.stopPropagation();
+              data.onToggleCluster?.(data.clusterKey!);
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={data.clusterExpanded ? '' : styles.chevronCollapsed}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ── Swimlane per-type rendering ─────────────────────────────────────
   if (isSwimlane) {
@@ -569,6 +630,7 @@ function CustomNode({ data, selected }: NodeProps<CustomNodeType>) {
         <div className={styles.iconWrapper}>
           <NodeIcon type={type} />
         </div>
+        <NodeThumbnail src={thumbnail} show={detail === 'full'} />
         <div className={styles.info}>
           <span className={styles.name} title={name}>{name}</span>
           <span className={styles.type}>{type}</span>

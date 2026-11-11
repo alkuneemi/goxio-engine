@@ -1,5 +1,6 @@
-import { memo } from 'react';
+import { memo, useContext } from 'react';
 import { BaseEdge, getBezierPath, Position, useInternalNode, type Edge, type EdgeProps } from '@xyflow/react';
+import { GraphDetailContext } from './detailContext';
 import styles from './CustomEdge.module.css';
 
 export type CustomEdgeData = Record<string, unknown> & {
@@ -63,11 +64,28 @@ function CustomEdge({
   id,
   source,
   target,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
   data,
   selected,
 }: EdgeProps<CustomEdgeType>) {
+  const detail = useContext(GraphDetailContext);
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
+  const rich = detail === 'full';
+
+  // Zoomed out, or when there are too many edges to stroke individually, a
+  // straight solid line is enough and skips bezier math plus a label per edge.
+  if (!rich) {
+    const edgePath = `M${sourceX},${sourceY}L${targetX},${targetY}`;
+    return (
+      <g className={styles.edgeGroup}>
+        <BaseEdge id={id} path={edgePath} className={`${styles.edge} ${styles.edgeCompact}`} />
+      </g>
+    );
+  }
 
   if (!sourceNode || !targetNode) return null;
 
@@ -133,16 +151,6 @@ function CustomEdge({
           fill="none"
           className={`${styles.edgeArrowPath} ${isCrossNamespace ? styles.edgeCrossNs : ''} ${isActive ? styles.active : ''}`}
           markerEnd={`url(#${isCrossNamespace ? 'arrow-cross-ns' : 'arrow-routes-to'})`}
-        />
-      )}
-
-      {/* Animated overlay for active edges */}
-      {isActive && (
-        <path
-          d={edgePath}
-          className={styles.animatedPath}
-          fill="none"
-          strokeDasharray="5 5"
         />
       )}
 

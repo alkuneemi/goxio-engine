@@ -69,16 +69,21 @@
   stroke-width: var(--edge-width-active);
 }
 
-.animatedPath {
-  stroke: var(--accent-highlight);
-  stroke-width: 3px;
-  animation: dashFlow 1s linear infinite;
+/* Many edges: one solid hairline, no dash (dashes are re-rasterized while panning). */
+.edgeCompact {
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-width: 1px;
+  stroke-dasharray: none;
 }
 
-@keyframes dashFlow {
-  to {
-    stroke-dashoffset: -10px;
-  }
+:global([data-detail='compact']) .edgeContains {
+  stroke-dasharray: none;
+  stroke-width: 1px;
+}
+
+:global([data-detail='compact']) .labelBg,
+:global([data-detail='compact']) .labelText {
+  display: none;
 }
 
 /* Edge labels */

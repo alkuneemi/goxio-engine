@@ -8,6 +8,10 @@
   overflow: hidden;
 }
 
+.canvas[data-detail='compact'] {
+  text-rendering: optimizeSpeed;
+}
+
 /* Loading state */
 
 .loading {
