@@ -61,6 +61,16 @@
   background: var(--status-unknown);
 }
 
+/* Small lazy thumbnail. Omitted entirely while the map is zoomed out. */
+.thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-interactive);
+}
+
 /* Icon */
 .iconWrapper {
   width: 18px;
@@ -468,6 +478,22 @@
 :global([data-calm='true']) .pulseDegraded .swimCard,
 :global([data-calm='true']) .pulseDegraded .card,
 :global([data-calm='true']) .pulseUnhealthy .swimCard,
-:global([data-calm='true']) .pulseUnhealthy .card {
+:global([data-calm='true']) .pulseUnhealthy .card,
+:global([data-calm='true']) .node {
   animation: none;
+}
+
+/* Zoomed out or crowded: shadows, filters, and the entrance animation repaint
+   on every pan frame once the layer is larger than the GPU will cache. */
+:global([data-detail='compact']) .node {
+  animation: none;
+  transition: none;
+  filter: none;
+}
+
+:global([data-detail='compact']) .card,
+:global([data-detail='compact']) .swimCard {
+  box-shadow: none;
+  backdrop-filter: none;
+  transition: none;
 }

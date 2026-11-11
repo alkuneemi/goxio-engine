@@ -8,6 +8,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStore,
   useStoreApi,
   ReactFlowProvider,
   type Node,
@@ -23,9 +24,11 @@ import CustomEdge, { type CustomEdgeData } from './CustomEdge';
 import { EdgeMarkerDefs } from './EdgeMarkerDefs';
 import { EmptyState } from '../ui';
 import type { Graph, GraphEdge } from '../../types';
-import { calculatePriority, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, debounce, worstHealth, type NamespaceSummary } from '../../utils';
+import { calculatePriority, calculateHierarchicalLayout, calculateForceDirectedLayout, calculateSwimlaneLayout, collapseFanout, debounce, detailLevel, placeMissingNodes, worstHealth, type NamespaceSummary } from '../../utils';
 import { useLayoutPersistence } from '../../hooks';
+import { useForceSimulation } from '../../hooks/useForceSimulation';
 import type { LayoutMode } from '../HeaderBar';
+import { GraphDetailContext } from './detailContext';
 import styles from './GraphCanvas.module.css';
 
 const nodeTypes: NodeTypes = {
@@ -94,7 +97,29 @@ function viewportForLayout(
 const MIN_ZOOM = 0.2;
 
 // Past this many nodes React Flow only mounts what's inside the viewport.
-const VIRTUALIZE_NODES = 200;
+// Low enough that zooming into an expanded hub does not keep every card mounted.
+const VIRTUALIZE_NODES = 40;
+
+// Pulse animations stay off for graphs this large; the health dot still shows state.
+const CALM_NODES = 200;
+
+function structureKey(
+  graph: Graph,
+  layoutMode: LayoutMode,
+  size: { width: number; height: number },
+  resetKey: number,
+): string {
+  let hash = graph.nodes.length * 131 + graph.edges.length * 17 + resetKey;
+  for (const node of graph.nodes) {
+    hash = Math.imul(hash, 33) ^ node.id.charCodeAt(0) ^ node.id.charCodeAt(node.id.length - 1);
+    hash = (hash + node.id.length) | 0;
+  }
+  for (const edge of graph.edges) {
+    hash = Math.imul(hash, 31) ^ edge.source.charCodeAt(0) ^ edge.target.charCodeAt(0);
+    hash = (hash + edge.source.length + edge.target.length) | 0;
+  }
+  return `${layoutMode}:${Math.round(size.width / 80)}x${Math.round(size.height / 80)}:${hash}`;
+}
 
 function getConnectedNodeIds(nodeId: string, edges: GraphEdge[]) {
   const sources = new Set<string>();
@@ -177,6 +202,10 @@ function computeLayout(
   viewportSize: { width: number; height: number },
   namespaces: Map<string, NamespaceSummary>,
   onToggleCollapse: ((namespaceName: string) => void) | undefined,
+  // Force layout passes positions it already settled (or a cheap seed). The
+  // synchronous 300-tick simulation must not run during render.
+  presetPositions?: Map<string, { x: number; y: number }> | null,
+  onToggleCluster?: (clusterKey: string) => void,
 ): {
   nodes: Node<CustomNodeData>[];
   edges: Edge<CustomEdgeData>[];
@@ -298,9 +327,11 @@ function computeLayout(
   }
 
   // ── Hierarchical / Force layout (existing) ──────────────────────────
-  const basePositions = layoutMode === 'hierarchical'
-    ? calculateHierarchicalLayout(graph)
-    : calculateForceDirectedLayout(graph, viewportSize);
+  const basePositions = presetPositions
+    ? presetPositions
+    : layoutMode === 'hierarchical'
+      ? calculateHierarchicalLayout(graph)
+      : calculateForceDirectedLayout(graph, viewportSize);
 
   // Merge with saved positions (pinned nodes override calculated positions)
   const finalPositions = new Map(basePositions);
@@ -386,6 +417,11 @@ function computeLayout(
         isPinned: savedPos?.isPinned || false,
         isGroup,
         metadata: node.metadata,
+        isCluster: node.metadata?.cluster === true,
+        clusterKey: typeof node.metadata?.clusterKey === 'string' ? node.metadata.clusterKey : undefined,
+        clusterKind: typeof node.metadata?.clusterKind === 'string' ? node.metadata.clusterKind : undefined,
+        clusterExpanded: node.metadata?.clusterExpanded === true,
+        onToggleCluster: node.metadata?.cluster === true ? onToggleCluster : undefined,
         ...(node.type === 'namespace' ? namespaceData(node.id, node.health) : {}),
       },
     };
@@ -494,8 +530,9 @@ function GraphCanvasInner({
 
   const graphIsEmpty = graph?.nodes?.length === 0;
 
-  // Dynamic viewport via ResizeObserver
-  const [viewportSize, setViewportSize] = useState({ width: 1200, height: 800 });
+  // Dynamic viewport via ResizeObserver. `ready` gates the force simulation so
+  // it runs once, against the real pane, instead of again when 1200x800 is replaced.
+  const [viewportSize, setViewportSize] = useState({ width: 1200, height: 800, ready: false });
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
@@ -504,7 +541,11 @@ function GraphCanvasInner({
       if (entry) {
         const { width, height } = entry.contentRect;
         if (width > 0 && height > 0) {
-          setViewportSize({ width, height });
+          setViewportSize(prev => (
+            prev.ready && prev.width === width && prev.height === height
+              ? prev
+              : { width, height, ready: true }
+          ));
         }
       }
     });
@@ -514,12 +555,65 @@ function GraphCanvasInner({
     // so re-run when those change or the observer never attaches.
   }, [isLoading, error, graphIsEmpty]);
 
-  // Memo 1: Expensive layout computation — NOT dependent on selectedNodeId
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const expandedSet = useMemo(() => new Set(expandedKeys), [expandedKeys]);
+  const toggleCluster = useCallback((key: string) => {
+    setExpandedKeys(prev => (prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key].sort()));
+  }, []);
+  // Collapse hub fan-out before layout. Swimlane already simplifies containment.
+  const fanout = useMemo(() => {
+    if (!graph || layoutMode === 'swimlane') return null;
+    return collapseFanout(graph, expandedSet);
+  }, [graph, expandedSet, layoutMode]);
+  const displayGraph = fanout?.graph ?? graph;
+  // Selecting a node that lives inside a collapsed hub opens that hub. Adjusted
+  // during render so the expanded graph is what layout sees on this pass.
+  const selectedCluster = selectedNodeId && fanout ? fanout.memberCluster.get(selectedNodeId) : undefined;
+  if (selectedCluster && !expandedKeys.includes(selectedCluster)) {
+    setExpandedKeys([...expandedKeys, selectedCluster].sort());
+  }
+
+  const pinSignature = useMemo(() => {
+    const ids: string[] = [];
+    savedPositions.forEach((pos, id) => { if (pos.isPinned) ids.push(id); });
+    ids.sort();
+    return ids.join('|');
+  }, [savedPositions]);
+  const simKey = useMemo(() => {
+    if (!graph) return 'empty';
+    return `${structureKey(graph, layoutMode, viewportSize, resetKey ?? 0)}:${pinSignature}`;
+  }, [graph, layoutMode, viewportSize, resetKey, pinSignature]);
+
+  const interactingRef = useRef(false);
+  // Positions captured when the simulation freezes. Ticks update node state
+  // directly and do not replace this map, so edges are not rebuilt per frame.
+  const [frozen, setFrozen] = useState<Map<string, { x: number; y: number }>>(() => new Map());
+  const rememberPositions = useCallback((positions: Map<string, { x: number; y: number }>) => {
+    setFrozen(positions);
+  }, []);
+  const layoutPositions = useMemo(() => {
+    if (layoutMode !== 'force' || !displayGraph) return null;
+    const map = new Map(frozen);
+    placeMissingNodes(displayGraph.nodes, map);
+    return map;
+  }, [displayGraph, layoutMode, frozen]);
+
+  // Memo 1: Expensive layout computation — NOT dependent on selectedNodeId.
+  // Force positions come from the simulation hook, never from a render-time tick loop.
   const { layoutNodes, layoutEdges, detailEdges } = useMemo(() => {
-    if (!graph?.nodes) return { layoutNodes: [], layoutEdges: [], detailEdges: undefined };
-    const { nodes, edges, detailEdges } = computeLayout(graph, layoutMode, savedPositions, viewportSize, namespaces ?? new Map(), onToggleCollapse);
+    if (!displayGraph?.nodes) return { layoutNodes: [], layoutEdges: [], detailEdges: undefined };
+    const { nodes, edges, detailEdges } = computeLayout(
+      displayGraph,
+      layoutMode,
+      savedPositions,
+      viewportSize,
+      namespaces ?? new Map(),
+      onToggleCollapse,
+      layoutPositions,
+      toggleCluster,
+    );
     return { layoutNodes: nodes, layoutEdges: edges, detailEdges };
-  }, [graph, layoutMode, savedPositions, viewportSize, namespaces, onToggleCollapse]);
+  }, [displayGraph, layoutMode, savedPositions, viewportSize, namespaces, onToggleCollapse, layoutPositions, toggleCluster]);
 
   // Latest layout + size for deferred fits (they run from timers).
   const fitInputRef = useRef({ layoutNodes, viewportSize });
@@ -536,14 +630,23 @@ function GraphCanvasInner({
     if (vp) setViewport(vp, { duration: opts.duration });
   }, [setViewport, store]);
 
+  // Force layout fits after the simulation freezes; fitting the seed circle
+  // first would frame the wrong area. The ref is updated once the hook runs.
+  const forceSettledRef = useRef(layoutMode !== 'force');
   // End the transition and refit. layoutMode is a dependency so a second
   // switch mid-transition restarts the timer.
   useEffect(() => {
     if (!isTransitioning) return;
-    const timer = setTimeout(() => {
+    let timer = 0;
+    const finish = () => {
+      if (layoutMode === 'force' && !forceSettledRef.current) {
+        timer = window.setTimeout(finish, 40);
+        return;
+      }
       setIsTransitioning(false);
       fitView({ duration: 500 });
-    }, 100);
+    };
+    timer = window.setTimeout(finish, 100);
     return () => clearTimeout(timer);
   }, [isTransitioning, layoutMode, fitView]);
 
@@ -557,33 +660,62 @@ function GraphCanvasInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
 
+  const force = useForceSimulation({
+    enabled: layoutMode === 'force' && (displayGraph?.nodes.length ?? 0) > 0,
+    ready: viewportSize.ready,
+    simKey,
+    graph: displayGraph ?? { nodes: [], edges: [] },
+    size: viewportSize,
+    pinned: savedPositions,
+    interactingRef,
+    setNodes,
+    onFrozen: rememberPositions,
+  });
+  useEffect(() => {
+    forceSettledRef.current = force.settled;
+  }, [force.settled]);
+
   useEffect(() => {
     setNodes(flowNodes);
     setEdges(flowEdges);
   }, [flowNodes, flowEdges, setNodes, setEdges]);
 
+  const edgeCount = flowEdges.length;
+  const detail = useStore(useCallback(
+    (state: { transform: [number, number, number] }) => detailLevel(state.transform[2], edgeCount),
+    [edgeCount],
+  ));
+
   // Fit once when the graph first arrives and whenever fitKey changes (the
   // caller bumps it for filter changes). Not on every node-count change:
   // expanding/collapsing a namespace or pods churning in a live cluster must
-  // leave the user's viewport alone.
+  // leave the user's viewport alone. Force layout waits until the simulation
+  // has cooled so the frame matches the frozen positions.
   const hasNodes = (graph?.nodes?.length ?? 0) > 0;
   const prevFitKeyRef = useRef(fitKey);
   useEffect(() => {
-    if (!hasNodes) return;
+    if (!hasNodes || !force.settled) return;
     if (hasFitRef.current && fitKey === prevFitKeyRef.current) return;
     hasFitRef.current = true;
     prevFitKeyRef.current = fitKey;
     setTimeout(() => fitView({ duration: 500 }), 100);
-  }, [hasNodes, fitKey, fitView]);
+  }, [hasNodes, fitKey, fitView, force.settled]);
 
-  // Reset positions when resetKey changes (triggered by "Reset Positions" button)
+  // Reset positions when resetKey changes (triggered by "Reset Positions" button).
+  // The fit waits until a force simulation has frozen again.
   const prevResetKeyRef = useRef(resetKey);
+  const resetFitPendingRef = useRef(false);
   useEffect(() => {
     if (resetKey === undefined || resetKey === prevResetKeyRef.current) return;
     prevResetKeyRef.current = resetKey;
     clearLayout();
+    resetFitPendingRef.current = true;
+  }, [resetKey, clearLayout]);
+  useEffect(() => {
+    if (!resetFitPendingRef.current || !force.settled) return;
+    resetFitPendingRef.current = false;
     setTimeout(() => fitView({ duration: 500 }), 50);
-  }, [resetKey, clearLayout, fitView]);
+  }, [force.settled, resetKey, fitView]);
 
   const nodesWithSelection = useMemo(() => {
     return nodes.map(node => ({
@@ -598,10 +730,24 @@ function GraphCanvasInner({
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
+      const data = node.data as { isCluster?: boolean; clusterKey?: string };
+      if (data.isCluster && data.clusterKey) {
+        toggleCluster(data.clusterKey);
+        return;
+      }
       onNodeSelect(node.id);
     },
-    [onNodeSelect]
+    [onNodeSelect, toggleCluster]
   );
+
+  const handleMoveStart = useCallback(() => {
+    interactingRef.current = true;
+  }, []);
+
+  const handleMoveEnd = useCallback(() => {
+    interactingRef.current = false;
+    force.resume();
+  }, [force]);
 
   const handleEdgeClick = useCallback(
     (_event: React.MouseEvent, edge: Edge) => {
@@ -633,13 +779,27 @@ function GraphCanvasInner({
     [savePosition]
   );
 
+  const handleNodeDragStart = useCallback(() => {
+    interactingRef.current = true;
+  }, []);
+
   const handleNodeDragStop = useCallback(
     (_event: React.MouseEvent, node: Node) => {
+      interactingRef.current = false;
+      if (force.settled) {
+        setFrozen(prev => {
+          const next = new Map(prev);
+          next.set(node.id, node.position);
+          return next;
+        });
+      }
+      force.nudge(node.id, node.position);
+      force.resume();
       debouncedSavePosition(node.id, node.position);
       setJustSavedNodeId(node.id);
       setTimeout(() => setJustSavedNodeId(prev => prev === node.id ? null : prev), 600);
     },
-    [debouncedSavePosition]
+    [debouncedSavePosition, force]
   );
 
   if (error) {
@@ -685,8 +845,10 @@ function GraphCanvasInner({
     <div
       ref={canvasRef}
       className={`${styles.canvas} ${isTransitioning ? styles.transitioning : ''}`}
-      data-calm={nodes.length > VIRTUALIZE_NODES}
+      data-calm={nodes.length > CALM_NODES}
+      data-detail={detail}
     >
+      <GraphDetailContext.Provider value={detail}>
       <ReactFlow
         nodes={nodesWithSelection}
         edges={edges}
@@ -695,10 +857,13 @@ function GraphCanvasInner({
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
+        onMoveStart={handleMoveStart}
+        onMoveEnd={handleMoveEnd}
+        onNodeDragStart={handleNodeDragStart}
         onNodeDragStop={handleNodeDragStop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        fitView
+        fitView={layoutMode !== 'force'}
         fitViewOptions={FIT_VIEW}
         minZoom={MIN_ZOOM}
         maxZoom={2.5}
@@ -737,6 +902,7 @@ function GraphCanvasInner({
           zoomable
         />
       </ReactFlow>
+      </GraphDetailContext.Provider>
     </div>
   );
 }
